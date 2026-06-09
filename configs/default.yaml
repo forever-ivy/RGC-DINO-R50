@@ -1,0 +1,47 @@
+project:
+  name: rgc-dino-r50
+  task: multimodal_object_detection
+  metric: mAP@50:95
+
+paths:
+  dataset_root: /data1/liuxuan/datasets/rgc_multimodal
+  labels_dir: source/labels
+  output_dir: /data1/liuxuan/logs/rgc-dino-r50
+
+data:
+  modalities:
+    rgb:
+      channels: 3
+      dtype: uint8
+    infrared:
+      channels: 3
+      dtype: uint8
+      note: pseudo_rgb_thermal_gray
+    depth:
+      channels: 1
+      dtype: uint16
+      unit: millimeter
+      valid_range_mm: [300, 20000]
+  num_classes: 12
+  max_predictions_per_image: 100
+
+model:
+  name: rgc-dino-r50
+  detector: dino_r50_4scale
+  fusion: reliability_gated_residual_cross_modal_fusion
+  rgb_backbone: resnet50
+  ir_depth_branch: lightweight_side_encoder
+
+training:
+  seed: 2026
+  split_strategy: grouped_stratified_kfold
+  folds: 3
+  use_external_training_data: false
+  allow_public_pretrained_weights: true
+
+submission:
+  require_txt_for_every_image: true
+  empty_txt_for_no_detection: true
+  confidence_range: [0.0, 1.0]
+  box_format: [class_id, norm_center_x, norm_center_y, norm_w, norm_h, confidence]
+

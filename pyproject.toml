@@ -1,0 +1,15 @@
+[project]
+name = "rgc-dino-r50"
+version = "0.1.0"
+description = "RGC-DINO-R50 multimodal object detection competition scaffold"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
