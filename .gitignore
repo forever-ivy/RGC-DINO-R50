@@ -31,6 +31,8 @@ mlruns/
 data/raw/
 data/cache/
 data/images/
+# External third-party source trees
+external/IDEA-Research-DINO/
 source/images/
 source/rgb/
 source/ir/

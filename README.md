@@ -58,6 +58,29 @@ python -m py_compile src/rgc_dino/*.py scripts/*.py
 PYTHONPATH=src python -m unittest discover -s tests
 ```
 
+## DINO 官方工程集成
+
+计划书要求检测核心复用 IDEA-Research DINO 4-scale ResNet-50。阶段 1 只做官方工程集成和轻量 smoke check，不在交互会话中编译 CUDA ops、下载权重或启动训练。
+
+预期外部代码位置：
+
+```text
+external/IDEA-Research-DINO/
+```
+
+检查 DINO 目录结构：
+
+```sh
+source /data1/liuxuan/activate-py310.sh
+python scripts/check_dino_integration.py --dino-root external/IDEA-Research-DINO
+```
+
+生成但不提交 DINO smoke-check LSF 脚本：
+
+```sh
+python scripts/write_bsub_dino_smoke.py --output outputs/jobs/dino_smoke.lsf
+```
+
 ## 开发边界
 
 当前仓库只完成了初始化骨架和轻量数据/环境检查。后续训练、模型、数据集转换、验证器和提交打包脚本应继续按 `doc/RGC-DINO-R50 三模态单模型冲榜工程方案.pdf` 落地。
