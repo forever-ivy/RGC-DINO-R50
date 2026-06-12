@@ -1,0 +1,24 @@
+project:
+  name: rgc-dino-r50
+  phase: dino_official_integration
+
+dino:
+  official_repo: https://github.com/IDEA-Research/DINO
+  external_dino_root: external/IDEA-Research-DINO
+  official_config: config/DINO/DINO_4scale.py
+  required_paths:
+    - main.py
+    - models/dino
+    - models/dino/ops
+  detector: dino_r50_4scale
+  num_classes: 12
+  dn_labelbook_size: 13
+  num_queries: 900
+  num_feature_levels: 4
+  pretrained_weights:
+    allow_public_pretrained_weights: true
+    store_under: /data1/liuxuan/checkpoints
+
+paths:
+  output_dir: /data1/liuxuan/logs/rgc-dino-r50
+  local_outputs: outputs/dino_integration
