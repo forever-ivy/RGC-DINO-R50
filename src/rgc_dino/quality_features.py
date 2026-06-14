@@ -43,11 +43,16 @@ def load_quality_features(
     visible_path: str | Path,
     infrared_path: str | Path,
     depth_path: str | Path,
+    *,
+    max_side: int | None = None,
 ) -> dict[str, float]:
     """Load three modality images and compute the 24-D static quality vector."""
-    visible = np.asarray(Image.open(visible_path))
-    infrared = np.asarray(Image.open(infrared_path))
-    depth = np.asarray(Image.open(depth_path))
+    visible_image = _open_quality_image(visible_path, max_side=max_side, resample=Image.Resampling.BILINEAR)
+    infrared_image = _open_quality_image(infrared_path, max_side=max_side, resample=Image.Resampling.BILINEAR)
+    depth_image = _open_quality_image(depth_path, max_side=max_side, resample=Image.Resampling.NEAREST)
+    visible = np.asarray(visible_image)
+    infrared = np.asarray(infrared_image)
+    depth = np.asarray(depth_image)
     return compute_quality_features(visible, infrared, depth)
 
 
@@ -265,6 +270,27 @@ def _normalize_valid(values: np.ndarray, valid: np.ndarray) -> np.ndarray:
         return np.zeros_like(values, dtype=np.float32)
     normalized = (values - min_value) / (max_value - min_value)
     return np.clip(normalized, 0.0, 1.0).astype(np.float32)
+
+
+def _resize_max_side(image: Image.Image, *, max_side: int, resample: int) -> Image.Image:
+    width, height = image.size
+    longest = max(width, height)
+    if longest <= max_side:
+        return image
+    scale = float(max_side) / float(longest)
+    resized_width = max(1, int(round(width * scale)))
+    resized_height = max(1, int(round(height * scale)))
+    return image.resize((resized_width, resized_height), resample=resample)
+
+
+def _open_quality_image(path: str | Path, *, max_side: int | None, resample: int) -> Image.Image:
+    if max_side is not None and max_side <= 0:
+        raise ValueError("max_side must be positive")
+    with Image.open(path) as image:
+        image = image.copy()
+    if max_side is None:
+        return image
+    return _resize_max_side(image, max_side=max_side, resample=resample)
 
 
 def _mean(values: np.ndarray) -> float:

@@ -128,6 +128,7 @@ class MultimodalDinoInferenceDataset(Dataset):
         samples: Sequence[MultimodalSample],
         *,
         image_max_side: int | None = 640,
+        quality_cache: dict[str, dict[str, float]] | None = None,
     ) -> None:
         if not samples:
             raise ValueError("samples must not be empty")
@@ -135,6 +136,7 @@ class MultimodalDinoInferenceDataset(Dataset):
             raise ValueError("image_max_side must be positive")
         self.samples = tuple(samples)
         self.image_max_side = image_max_side
+        self.quality_cache = quality_cache
 
     @classmethod
     def from_paths(
@@ -143,6 +145,8 @@ class MultimodalDinoInferenceDataset(Dataset):
         dataset_root: str | Path,
         sample_ids: Sequence[str] | None = None,
         image_max_side: int | None = 640,
+        quality_cache: dict[str, dict[str, float]] | None = None,
+        quality_cache_path: str | Path | None = None,
     ) -> "MultimodalDinoInferenceDataset":
         samples = discover_aligned_samples(dataset_root)
         if sample_ids is not None:
@@ -151,14 +155,17 @@ class MultimodalDinoInferenceDataset(Dataset):
             if missing:
                 raise ValueError(f"sample ids not found in aligned dataset: {missing[:5]}")
             samples = [by_id[sample_id] for sample_id in sample_ids]
-        return cls(samples, image_max_side=image_max_side)
+        loaded_quality_cache = quality_cache
+        if quality_cache_path is not None:
+            loaded_quality_cache = load_quality_feature_cache(quality_cache_path)
+        return cls(samples, image_max_side=image_max_side, quality_cache=loaded_quality_cache)
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, index: int) -> tuple[dict[str, Tensor], dict[str, Tensor | str]]:
         sample = self.samples[index]
-        loaded = _load_modalities(sample, image_max_side=self.image_max_side)
+        loaded = _load_modalities(sample, image_max_side=self.image_max_side, quality_cache=self.quality_cache)
         return (
             loaded.tensors,
             {

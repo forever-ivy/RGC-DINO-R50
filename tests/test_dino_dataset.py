@@ -247,6 +247,37 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
             self.assertEqual(target["sample_id"], "test_a")
             self.assertTrue(torch.equal(target["orig_size"], torch.tensor([6, 12])))
 
+    def test_inference_dataset_uses_quality_cache_without_recomputing_features(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "test"
+            for modality in ("visible", "infrared", "depth"):
+                (root / modality).mkdir(parents=True)
+
+            rgb = np.zeros((4, 4, 3), dtype=np.uint8)
+            infrared = np.zeros((4, 4, 3), dtype=np.uint8)
+            depth = np.full((4, 4), 1000, dtype=np.uint16)
+            Image.fromarray(rgb).save(root / "visible" / "test_cache.png")
+            Image.fromarray(infrared).save(root / "infrared" / "test_cache.png")
+            Image.fromarray(depth).save(root / "depth" / "test_cache.png")
+            cached = {
+                "test_cache": {
+                    name: float(index)
+                    for index, name in enumerate(QUALITY_FEATURE_NAMES)
+                }
+            }
+
+            dataset = MultimodalDinoInferenceDataset.from_paths(
+                dataset_root=root,
+                sample_ids=["test_cache"],
+                image_max_side=4,
+                quality_cache=cached,
+            )
+
+            with mock.patch("rgc_dino.dino_dataset.load_quality_features", side_effect=AssertionError):
+                sample, _target = dataset[0]
+
+            self.assertTrue(torch.equal(sample["quality"], torch.arange(24, dtype=torch.float32)))
+
 
 if __name__ == "__main__":
     unittest.main()

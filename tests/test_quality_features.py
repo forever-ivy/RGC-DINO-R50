@@ -13,6 +13,8 @@ from rgc_dino.quality_features import (
     load_quality_features,
     write_quality_feature_cache,
 )
+from scripts.cache_quality_features import build_quality_cache
+from rgc_dino.dataset import MultimodalSample
 
 
 class QualityFeaturesTest(unittest.TestCase):
@@ -70,6 +72,25 @@ class QualityFeaturesTest(unittest.TestCase):
             self.assertEqual(tuple(features), QUALITY_FEATURE_NAMES)
             self.assertAlmostEqual(features["depth_valid_ratio"], 1.0)
 
+    def test_loads_features_from_downscaled_images_when_max_side_is_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rgb_path = root / "rgb.png"
+            ir_path = root / "ir.png"
+            depth_path = root / "depth.png"
+            rgb = np.zeros((8, 12, 3), dtype=np.uint8)
+            rgb[:, 6:] = 255
+            Image.fromarray(rgb).save(rgb_path)
+            Image.fromarray(rgb).save(ir_path)
+            Image.fromarray(np.full((8, 12), 1000, dtype=np.uint16)).save(depth_path)
+
+            full_features = load_quality_features(rgb_path, ir_path, depth_path)
+            downscaled_features = load_quality_features(rgb_path, ir_path, depth_path, max_side=4)
+
+            self.assertEqual(tuple(downscaled_features), QUALITY_FEATURE_NAMES)
+            self.assertEqual(downscaled_features["depth_valid_ratio"], 1.0)
+            self.assertNotEqual(full_features["rgb_laplace_var"], downscaled_features["rgb_laplace_var"])
+
     def test_quality_feature_cache_round_trips_with_stable_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cache_path = Path(tmp) / "quality.json"
@@ -85,6 +106,33 @@ class QualityFeaturesTest(unittest.TestCase):
 
             self.assertEqual(tuple(loaded["sample_a"]), QUALITY_FEATURE_NAMES)
             self.assertEqual(loaded, features)
+
+    def test_build_quality_cache_parallel_matches_single_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            samples = []
+            for index in range(3):
+                rgb_path = root / f"rgb_{index}.png"
+                ir_path = root / f"ir_{index}.png"
+                depth_path = root / f"depth_{index}.png"
+                rgb = np.full((8, 12, 3), index * 40, dtype=np.uint8)
+                Image.fromarray(rgb).save(rgb_path)
+                Image.fromarray(255 - rgb).save(ir_path)
+                Image.fromarray(np.full((8, 12), 1000 + index, dtype=np.uint16)).save(depth_path)
+                samples.append(
+                    MultimodalSample(
+                        sample_id=f"sample_{index}",
+                        visible_path=rgb_path,
+                        infrared_path=ir_path,
+                        depth_path=depth_path,
+                        label_path=None,
+                    )
+                )
+
+            single = build_quality_cache(samples, max_side=4, num_workers=1)
+            parallel = build_quality_cache(samples, max_side=4, num_workers=2)
+
+            self.assertEqual(parallel, single)
 
 
 if __name__ == "__main__":

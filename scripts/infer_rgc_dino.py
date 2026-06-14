@@ -50,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-detections", type=int, default=100)
     parser.add_argument("--nms-iou-threshold", type=float, help="optional classwise NMS IoU threshold")
     parser.add_argument("--score-calibrator", type=Path, help="optional JSON classwise score calibrator")
+    parser.add_argument("--quality-cache", type=Path, help="optional sample_id -> quality feature cache JSON")
     parser.add_argument("--manifest-path", type=Path, help="optional submission manifest JSON path")
     parser.add_argument("--split-manifest", type=Path, default=ROOT / "outputs" / "splits" / "split_manifest.json")
     parser.add_argument("--sample-ids-file", type=Path, help="optional newline-delimited sample IDs to predict")
@@ -87,9 +88,14 @@ def main() -> int:
         dataset_root=args.dataset_root,
         sample_ids=sample_ids,
         image_max_side=args.image_max_side,
+        quality_cache_path=args.quality_cache,
     )
     if args.limit is not None:
-        dataset = MultimodalDinoInferenceDataset(dataset.samples[: args.limit], image_max_side=args.image_max_side)
+        dataset = MultimodalDinoInferenceDataset(
+            dataset.samples[: args.limit],
+            image_max_side=args.image_max_side,
+            quality_cache=dataset.quality_cache,
+        )
     image_ids = [sample.sample_id for sample in dataset.samples]
     loader = DataLoader(
         dataset,

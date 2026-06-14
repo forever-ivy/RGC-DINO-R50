@@ -104,7 +104,9 @@ cd {ROOT}
 mkdir -p /data1/liuxuan/logs
 
 python scripts/cache_quality_features.py \\
-  --output {quality_cache}
+  --output {quality_cache} \\
+  --max-side-for-quality {image_max_side} \\
+  --num-workers {num_workers}
 
 INIT_DINO_CHECKPOINT="{official_dino_checkpoint}"
 if [ ! -f "$INIT_DINO_CHECKPOINT" ]; then
