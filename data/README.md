@@ -16,3 +16,10 @@
 
 或项目本地已忽略的 `outputs/` 目录。
 
+v0 manifest 建议放在：
+
+```text
+outputs/manifests/
+```
+
+不要把原始图片、预测缓存、提交 ZIP 或训练输出提交进仓库。

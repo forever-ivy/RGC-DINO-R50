@@ -4,8 +4,10 @@ project:
   metric: mAP@50:95
 
 paths:
-  dataset_root: /data1/liuxuan/datasets/rgc_multimodal
-  labels_dir: source/labels
+  dataset_root: source/训练集
+  labels_dir: source/训练集/labels
+  manifest_path: outputs/manifests/train_2000.jsonl
+  splits_dir: outputs/splits
   output_dir: /data1/liuxuan/logs/rgc-dino-r50
 
 data:
@@ -36,6 +38,7 @@ training:
   seed: 2026
   split_strategy: grouped_stratified_kfold
   folds: 3
+  split_manifest: outputs/splits/split_manifest.json
   use_external_training_data: false
   allow_public_pretrained_weights: true
 
@@ -44,4 +47,3 @@ submission:
   empty_txt_for_no_detection: true
   confidence_range: [0.0, 1.0]
   box_format: [class_id, norm_center_x, norm_center_y, norm_w, norm_h, confidence]
-

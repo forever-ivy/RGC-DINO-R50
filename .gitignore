@@ -38,6 +38,8 @@ source/rgb/
 source/ir/
 source/infrared/
 source/depth/
+source/AIC2026_PHASE_1_1000/
+source/训练集/
 *.zip
 *.tar
 *.tar.gz
@@ -50,3 +52,13 @@ tmp/
 *.log
 *.tmp
 
+# Competition automation (sensitive data)
+cookies.json
+*auth*.json
+*local_storage*.json
+*.cookies
+chrome-competition-profile/
+submission_log.jsonl
+leaderboard_history.jsonl
+monitor_state.json
+submission_error.png
