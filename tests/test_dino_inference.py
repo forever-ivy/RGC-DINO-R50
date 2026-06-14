@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from rgc_dino.dino_inference import dino_result_to_detection_labels
+from rgc_dino.dino_inference import ClasswiseScoreCalibrator, dino_result_to_detection_labels
 
 
 class DinoInferenceTest(unittest.TestCase):
@@ -59,6 +59,33 @@ class DinoInferenceTest(unittest.TestCase):
 
         self.assertEqual([label.class_id for label in labels], [2, 3, 2])
         self.assertEqual([round(label.confidence or 0.0, 2) for label in labels], [0.95, 0.85, 0.80])
+
+    def test_classwise_calibrator_adjusts_scores_before_topk_sorting(self) -> None:
+        result = {
+            "scores": torch.tensor([0.8, 0.7, 0.6]),
+            "labels": torch.tensor([1, 2, 1]),
+            "boxes": torch.tensor(
+                [
+                    [0.0, 0.0, 10.0, 10.0],
+                    [10.0, 10.0, 20.0, 20.0],
+                    [20.0, 20.0, 30.0, 30.0],
+                ]
+            ),
+        }
+        calibrator = ClasswiseScoreCalibrator.from_mapping({"1": {"scale": 0.5}, "2": {"bias": 0.2}})
+
+        labels = dino_result_to_detection_labels(
+            result,
+            orig_height=100,
+            orig_width=100,
+            score_threshold=0.0,
+            max_detections=2,
+            score_calibrator=calibrator,
+        )
+
+        self.assertEqual([label.class_id for label in labels], [2, 1])
+        self.assertAlmostEqual(labels[0].confidence or 0.0, 0.9)
+        self.assertAlmostEqual(labels[1].confidence or 0.0, 0.4)
 
 
 if __name__ == "__main__":

@@ -69,6 +69,28 @@ class RgcFusionTest(unittest.TestCase):
                 self.assertGreaterEqual(float(detached.min()), 0.05)
                 self.assertLessEqual(float(detached.max()), 0.50)
 
+    def test_uses_robust_quality_prior_and_triple_residual_input(self) -> None:
+        fusion = ReliabilityGatedResidualFusion(
+            channels=4,
+            quality_dim=24,
+            num_levels=1,
+            gate_min=0.05,
+            gate_max=0.90,
+            alpha_prior=0.35,
+        )
+        self.assertEqual(fusion.prior_heads[0][-1].out_features, 3)
+        self.assertEqual(fusion.residual_blocks[0][0].in_channels, 12)
+
+        median = torch.arange(24, dtype=torch.float32)
+        mad = torch.ones(24, dtype=torch.float32) * 2.0
+        fusion.set_quality_stats(median=median, mad=mad)
+
+        quality = median.view(1, 24) + 1000.0
+        normalized = fusion.normalize_quality(quality)
+
+        self.assertLessEqual(float(normalized.max()), 3.0)
+        self.assertGreaterEqual(float(normalized.min()), 3.0)
+
     def test_rejects_mismatched_feature_levels(self) -> None:
         fusion = ReliabilityGatedResidualFusion(channels=8, quality_dim=24, num_levels=2)
         rgb = [torch.randn(1, 8, 4, 4), torch.randn(1, 8, 2, 2)]

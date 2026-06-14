@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 from typing import Mapping
 
 import torch
@@ -20,6 +22,7 @@ def dino_result_to_detection_labels(
     score_threshold: float = 0.05,
     max_detections: int = MAX_PREDICTIONS_PER_IMAGE,
     nms_iou_threshold: float | None = None,
+    score_calibrator: "ClasswiseScoreCalibrator | None" = None,
 ) -> list[DetectionLabel]:
     """Convert one DINO postprocessor result into normalized submission labels."""
     if orig_height <= 0 or orig_width <= 0:
@@ -33,10 +36,12 @@ def dino_result_to_detection_labels(
 
     for score_tensor, label_tensor, box_tensor in zip(scores, labels, boxes):
         confidence = float(score_tensor)
-        if confidence < score_threshold:
-            continue
         class_id = int(label_tensor)
         if not 0 <= class_id < NUM_CLASSES:
+            continue
+        if score_calibrator is not None:
+            confidence = score_calibrator.calibrate(class_id, confidence)
+        if confidence < score_threshold:
             continue
 
         x1, y1, x2, y2 = [float(value) for value in box_tensor.tolist()]
@@ -72,6 +77,45 @@ def dino_result_to_detection_labels(
 
 def _clip(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
+
+
+class ClasswiseScoreCalibrator:
+    """Small post-hoc score calibrator used before global top-k sorting."""
+
+    def __init__(self, params_by_class: Mapping[int, Mapping[str, float]]) -> None:
+        self.params_by_class = {
+            int(class_id): dict(params)
+            for class_id, params in params_by_class.items()
+        }
+
+    @classmethod
+    def from_path(cls, path: str | "Path") -> "ClasswiseScoreCalibrator":
+        from pathlib import Path
+
+        return cls.from_mapping(json.loads(Path(path).read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str | int, Mapping[str, float]]) -> "ClasswiseScoreCalibrator":
+        return cls({int(class_id): params for class_id, params in payload.items()})
+
+    def calibrate(self, class_id: int, score: float) -> float:
+        params = self.params_by_class.get(int(class_id))
+        if not params:
+            return _clip(score, 0.0, 1.0)
+        if "score_map" in params:
+            # Reserved for JSON-friendly explicit maps, kept conservative here.
+            return _clip(score, 0.0, 1.0)
+        logit_scale = float(params.get("logit_scale", 1.0))
+        logit_bias = float(params.get("logit_bias", 0.0))
+        scale = float(params.get("scale", 1.0))
+        bias = float(params.get("bias", 0.0))
+        clipped_score = _clip(score, 1e-6, 1.0 - 1e-6)
+        if logit_scale != 1.0 or logit_bias != 0.0:
+            logit = math.log(clipped_score / (1.0 - clipped_score))
+            calibrated = 1.0 / (1.0 + math.exp(-(logit_scale * logit + logit_bias)))
+        else:
+            calibrated = clipped_score
+        return _clip(scale * calibrated + bias, 0.0, 1.0)
 
 
 def _classwise_nms(records: list[DetectionLabel], *, iou_threshold: float) -> list[DetectionLabel]:

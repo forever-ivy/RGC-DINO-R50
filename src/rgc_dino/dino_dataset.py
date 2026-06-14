@@ -276,9 +276,19 @@ def _depth_tensor(image: Image.Image) -> Tensor:
         arr = arr[..., 0]
     valid = (arr >= DEPTH_VALID_MIN_MM) & (arr <= DEPTH_VALID_MAX_MM)
     clipped = np.clip(arr, DEPTH_VALID_MIN_MM, DEPTH_VALID_MAX_MM)
-    normalized = (clipped - DEPTH_VALID_MIN_MM) / float(DEPTH_VALID_MAX_MM - DEPTH_VALID_MIN_MM)
-    normalized[~valid] = 0.0
-    stacked = np.stack([normalized, valid.astype(np.float32)], axis=0)
+    log_depth = np.log(clipped)
+    log_min = float(np.log(DEPTH_VALID_MIN_MM))
+    log_max = float(np.log(DEPTH_VALID_MAX_MM))
+    log_depth = (log_depth - log_min) / (log_max - log_min)
+
+    inv_depth = 1.0 / clipped
+    inv_min = 1.0 / float(DEPTH_VALID_MAX_MM)
+    inv_max = 1.0 / float(DEPTH_VALID_MIN_MM)
+    inv_depth = (inv_depth - inv_min) / (inv_max - inv_min)
+
+    log_depth[~valid] = 0.0
+    inv_depth[~valid] = 0.0
+    stacked = np.stack([log_depth, inv_depth, valid.astype(np.float32)], axis=0)
     return torch.from_numpy(stacked.astype(np.float32)).contiguous()
 
 

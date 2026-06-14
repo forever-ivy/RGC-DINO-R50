@@ -11,13 +11,13 @@ class RgcDinoBatchTest(unittest.TestCase):
         sample_a = {
             "rgb": torch.ones(3, 10, 8),
             "infrared": torch.ones(1, 10, 8) * 2,
-            "depth": torch.ones(1, 10, 8) * 3,
+            "depth": torch.ones(3, 10, 8) * 3,
             "quality": torch.ones(24),
         }
         sample_b = {
             "rgb": torch.ones(3, 6, 12) * 4,
             "infrared": torch.ones(1, 6, 12) * 5,
-            "depth": torch.ones(1, 6, 12) * 6,
+            "depth": torch.ones(3, 6, 12) * 6,
             "quality": torch.ones(24) * 7,
         }
         target_a = {"image_id": torch.tensor(11)}
@@ -34,7 +34,7 @@ class RgcDinoBatchTest(unittest.TestCase):
         self.assertFalse(bool(samples.rgb.mask[1, :6, :12].any()))
         self.assertTrue(bool(samples.rgb.mask[1, 6:, :].all()))
         self.assertEqual(samples.infrared.shape, (2, 1, 10, 12))
-        self.assertEqual(samples.depth.shape, (2, 1, 10, 12))
+        self.assertEqual(samples.depth.shape, (2, 3, 10, 12))
         self.assertEqual(samples.quality.shape, (2, 24))
         self.assertEqual([int(target["image_id"]) for target in targets], [11, 12])
 

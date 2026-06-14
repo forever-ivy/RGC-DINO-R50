@@ -13,8 +13,10 @@ from scripts.train_rgc_dino import (
     _build_loaders,
     _build_official_args,
     _finalize_gate_stats,
+    _quality_median_mad,
     _validate_param_group_coverage,
 )
+from rgc_dino.quality_features import QUALITY_FEATURE_NAMES
 
 
 class TrainRgcDinoScriptTest(unittest.TestCase):
@@ -80,6 +82,18 @@ class TrainRgcDinoScriptTest(unittest.TestCase):
         self.assertAlmostEqual(summary["ir"][0]["min"], 0.1)
         self.assertAlmostEqual(summary["ir"][0]["max"], 0.5)
         self.assertAlmostEqual(summary["depth"][0]["mean"], 0.4)
+
+    def test_quality_median_mad_uses_robust_per_feature_statistics(self) -> None:
+        cache = {
+            "a": {name: 0.0 for name in QUALITY_FEATURE_NAMES},
+            "b": {name: 2.0 for name in QUALITY_FEATURE_NAMES},
+            "c": {name: 1000.0 for name in QUALITY_FEATURE_NAMES},
+        }
+
+        median, mad = _quality_median_mad(cache)
+
+        self.assertTrue(torch.equal(median, torch.full((24,), 2.0)))
+        self.assertTrue(torch.equal(mad, torch.full((24,), 2.0)))
 
     def test_build_loaders_all_train_mode_allows_empty_validation_split(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

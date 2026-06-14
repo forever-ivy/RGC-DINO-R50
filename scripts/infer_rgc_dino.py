@@ -24,10 +24,12 @@ from util.slconfig import SLConfig  # noqa: E402
 
 from rgc_dino.dino_batch import collate_rgc_dino_batch  # noqa: E402
 from rgc_dino.dino_dataset import MultimodalDinoInferenceDataset  # noqa: E402
-from rgc_dino.dino_inference import dino_result_to_detection_labels  # noqa: E402
+from rgc_dino.dino_inference import ClasswiseScoreCalibrator, dino_result_to_detection_labels  # noqa: E402
+from rgc_dino.dino_training import load_checkpoint_into_model  # noqa: E402
 from rgc_dino.models.rgc_dino_adapter import RgcDinoModel  # noqa: E402
 from rgc_dino.sample_ids import load_sample_ids_file  # noqa: E402
 from rgc_dino.submission import validate_submission_dir, write_submission_files, zip_submission_dir  # noqa: E402
+from rgc_dino.submission_manifest import build_submission_manifest, write_submission_manifest  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--score-threshold", type=float, default=0.05)
     parser.add_argument("--max-detections", type=int, default=100)
     parser.add_argument("--nms-iou-threshold", type=float, help="optional classwise NMS IoU threshold")
+    parser.add_argument("--score-calibrator", type=Path, help="optional JSON classwise score calibrator")
+    parser.add_argument("--manifest-path", type=Path, help="optional submission manifest JSON path")
+    parser.add_argument("--split-manifest", type=Path, default=ROOT / "outputs" / "splits" / "split_manifest.json")
     parser.add_argument("--sample-ids-file", type=Path, help="optional newline-delimited sample IDs to predict")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--amp", action="store_true")
@@ -71,6 +76,11 @@ def main() -> int:
     print(json.dumps(report, sort_keys=True))
     detector.to(device)
     detector.eval()
+    score_calibrator = (
+        ClasswiseScoreCalibrator.from_path(args.score_calibrator)
+        if args.score_calibrator is not None
+        else None
+    )
 
     sample_ids = load_sample_ids_file(args.sample_ids_file) if args.sample_ids_file is not None else None
     dataset = MultimodalDinoInferenceDataset.from_paths(
@@ -107,6 +117,7 @@ def main() -> int:
                     score_threshold=args.score_threshold,
                     max_detections=args.max_detections,
                     nms_iou_threshold=args.nms_iou_threshold,
+                    score_calibrator=score_calibrator,
                 )
 
     write_submission_files(
@@ -130,6 +141,18 @@ def main() -> int:
     if args.zip_path is not None:
         zip_submission_dir(args.output_dir, args.zip_path)
         summary["zip_path"] = str(args.zip_path)
+        manifest_path = args.manifest_path or args.zip_path.with_suffix(".manifest.json")
+        if args.split_manifest.exists():
+            manifest = build_submission_manifest(
+                zip_path=args.zip_path,
+                checkpoint_path=args.checkpoint,
+                git_commit=_git_commit(),
+                split_manifest_path=args.split_manifest,
+                calibrator_version=_calibrator_version(args.score_calibrator),
+                config_path=args.config_file,
+            )
+            write_submission_manifest(manifest_path, manifest)
+            summary["manifest_path"] = str(manifest_path)
     print(json.dumps(summary, sort_keys=True))
     return 0
 
@@ -184,7 +207,19 @@ def _load_checkpoint(model: RgcDinoModel, checkpoint_path: Path, *, scope: str) 
             scope = "dino"
 
     if scope == "rgc":
-        incompatible = model.load_state_dict(model_state, strict=False)
+        report = load_checkpoint_into_model(
+            model,
+            checkpoint_path,
+            skip_mismatched_shapes=True,
+            weights_only=False,
+        )
+        return {
+            "checkpoint": str(report.checkpoint_path),
+            "loaded_scope": scope,
+            "missing_keys": len(report.missing_keys),
+            "skipped_shape_mismatch_keys": len(report.skipped_keys),
+            "unexpected_keys": len(report.unexpected_keys),
+        }
     elif scope == "dino_model_payload":
         incompatible = model.dino_model.load_state_dict(payload["dino_model"], strict=False)
     else:
@@ -214,6 +249,28 @@ def _load_base_checkpoint(model: torch.nn.Module, checkpoint_path: Path) -> dict
 
 def _looks_like_rgc_state(state: dict[str, Any]) -> bool:
     return any(key.startswith(("dino_model.", "feature_fusion.")) for key in state)
+
+
+def _git_commit() -> str:
+    import subprocess
+
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+def _calibrator_version(path: Path | None) -> str:
+    if path is None:
+        return "none"
+    from rgc_dino.submission_manifest import file_sha256
+
+    return f"{path.name}:{file_sha256(path)}"
 
 
 if __name__ == "__main__":

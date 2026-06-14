@@ -31,7 +31,7 @@ from rgc_dino.dino_batch import collate_rgc_dino_batch  # noqa: E402
 from rgc_dino.dino_dataset import MultimodalDinoDataset  # noqa: E402
 from rgc_dino.dino_training import load_checkpoint_into_model, load_training_state, move_targets_to_device  # noqa: E402
 from rgc_dino.models.rgc_dino_adapter import RgcDinoModel  # noqa: E402
-from rgc_dino.quality_features import load_quality_feature_cache  # noqa: E402
+from rgc_dino.quality_features import QUALITY_FEATURE_NAMES, load_quality_feature_cache  # noqa: E402
 from rgc_dino.training_splits import select_train_val_ids  # noqa: E402
 
 
@@ -94,6 +94,9 @@ def main() -> int:
         model,
         side_base_channels=args.side_base_channels,
     )
+    quality_cache = load_quality_feature_cache(args.quality_cache) if args.quality_cache is not None else None
+    if quality_cache is not None:
+        _configure_quality_stats(wrapped_model, quality_cache)
     if args.init_dino_checkpoint is not None:
         report = load_checkpoint_into_model(
             wrapped_model.dino_model,
@@ -114,7 +117,7 @@ def main() -> int:
     wrapped_model.to(device)
     criterion.to(device)
 
-    train_loader, val_loader = _build_loaders(args)
+    train_loader, val_loader = _build_loaders(args, quality_cache=quality_cache)
     if args.log_gates_batches > 0:
         print(
             json.dumps(
@@ -338,7 +341,11 @@ def _optimizer_param_group_diagnostics(
     return diagnostics
 
 
-def _build_loaders(args: argparse.Namespace):
+def _build_loaders(
+    args: argparse.Namespace,
+    *,
+    quality_cache: dict[str, dict[str, float]] | None = None,
+):
     train_ids, val_ids = select_train_val_ids(
         dataset_root=args.dataset_root,
         labels_dir=args.labels,
@@ -350,9 +357,6 @@ def _build_loaders(args: argparse.Namespace):
         train_ids = train_ids[: args.limit_train]
     if args.limit_val is not None:
         val_ids = val_ids[: args.limit_val]
-    quality_cache_path = getattr(args, "quality_cache", None)
-    quality_cache = load_quality_feature_cache(quality_cache_path) if quality_cache_path is not None else None
-
     train_dataset = MultimodalDinoDataset.from_paths(
         dataset_root=args.dataset_root,
         labels_dir=args.labels,
@@ -390,6 +394,30 @@ def _build_loaders(args: argparse.Namespace):
             num_workers=args.num_workers,
         )
     return train_loader, val_loader
+
+
+def _configure_quality_stats(
+    model: RgcDinoModel,
+    quality_cache: dict[str, dict[str, float]],
+) -> None:
+    median, mad = _quality_median_mad(quality_cache)
+    fusion = getattr(getattr(model, "feature_fusion", None), "fusion", None)
+    if fusion is None or not hasattr(fusion, "set_quality_stats"):
+        raise TypeError("RGC feature fusion does not expose set_quality_stats")
+    fusion.set_quality_stats(median=median, mad=mad)
+
+
+def _quality_median_mad(quality_cache: dict[str, dict[str, float]]) -> tuple[torch.Tensor, torch.Tensor]:
+    if not quality_cache:
+        raise ValueError("quality cache must not be empty")
+    rows = [
+        [features[name] for name in QUALITY_FEATURE_NAMES]
+        for _sample_id, features in sorted(quality_cache.items())
+    ]
+    values = torch.tensor(rows, dtype=torch.float32)
+    median = values.median(dim=0).values
+    mad = (values - median.view(1, -1)).abs().median(dim=0).values.clamp_min(1e-6)
+    return median, mad
 
 
 def _run_smoke_batch(

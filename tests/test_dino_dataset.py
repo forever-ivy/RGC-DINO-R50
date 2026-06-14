@@ -40,8 +40,8 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
 
             self.assertEqual(sample["rgb"].shape, (3, 5, 10))
             self.assertEqual(sample["infrared"].shape, (1, 5, 10))
-            self.assertEqual(sample["depth"].shape, (2, 5, 10))
-            self.assertTrue(torch.all(sample["depth"][1] == 1.0))
+            self.assertEqual(sample["depth"].shape, (3, 5, 10))
+            self.assertTrue(torch.all(sample["depth"][2] == 1.0))
             self.assertEqual(sample["quality"].shape, (24,))
             self.assertEqual(target["labels"].dtype, torch.int64)
             self.assertTrue(torch.equal(target["labels"], torch.tensor([3])))
@@ -75,7 +75,7 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
 
             sample, _target = dataset[0]
 
-            self.assertEqual(sample["depth"].shape, (2, 8, 8))
+            self.assertEqual(sample["depth"].shape, (3, 8, 8))
 
     def test_depth_tensor_includes_spatial_valid_mask(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -108,10 +108,11 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
 
             sample, _target = dataset[0]
 
-            self.assertEqual(sample["depth"].shape, (2, 2, 2))
+            self.assertEqual(sample["depth"].shape, (3, 2, 2))
+            log_depth, inverse_depth, valid_mask = sample["depth"]
             self.assertTrue(
                 torch.equal(
-                    sample["depth"][1],
+                    valid_mask,
                     torch.tensor(
                         [
                             [0.0, 1.0],
@@ -120,6 +121,9 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
                     ),
                 )
             )
+            self.assertEqual(float(log_depth[0, 0]), 0.0)
+            self.assertEqual(float(inverse_depth[0, 0]), 0.0)
+            self.assertGreater(float(inverse_depth[0, 1]), float(inverse_depth[1, 0]))
 
     def test_horizontal_flip_is_applied_to_all_modalities_and_boxes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -83,7 +83,7 @@ class RgcDinoModelTest(unittest.TestCase):
         samples = RgcDinoSamples(
             rgb=rgb,
             infrared=torch.randn(2, 1, 16, 16),
-            depth=torch.randn(2, 2, 16, 16),
+            depth=torch.randn(2, 3, 16, 16),
             quality=torch.randn(2, 24),
         )
 

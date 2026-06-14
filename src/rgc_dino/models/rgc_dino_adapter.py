@@ -191,7 +191,7 @@ class ProjectedRgcFeatureFusion(nn.Module):
         quality_dim: int = len(QUALITY_FEATURE_NAMES),
         num_levels: int = 4,
         side_in_channels: int = 1,
-        depth_in_channels: int = 2,
+        depth_in_channels: int = 3,
         side_base_channels: int = 32,
         gate_min: float = 0.0,
         gate_max: float = 0.50,
