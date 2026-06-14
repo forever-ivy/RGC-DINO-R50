@@ -38,6 +38,7 @@ source/rgb/
 source/ir/
 source/infrared/
 source/depth/
+source/labels/
 source/AIC2026_PHASE_1_1000/
 source/训练集/
 *.zip
