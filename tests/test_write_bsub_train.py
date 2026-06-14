@@ -19,6 +19,7 @@ class WriteBsubTrainTest(unittest.TestCase):
             fallback_init_checkpoint=Path("outputs/checkpoints/a0.pth"),
             quality_cache=Path("outputs/cache/quality.json"),
             random_horizontal_flip_prob=0.5,
+            train_image_max_sides=(480, 640, 800),
             log_gates_batches=2,
         )
 
@@ -30,6 +31,7 @@ class WriteBsubTrainTest(unittest.TestCase):
         self.assertIn('--init-dino-checkpoint "$INIT_DINO_CHECKPOINT"', script)
         self.assertIn("--quality-cache outputs/cache/quality.json", script)
         self.assertIn("--random-horizontal-flip-prob 0.5", script)
+        self.assertIn("--train-image-max-sides 480 640 800", script)
         self.assertIn("--log-gates-batches 2", script)
         self.assertIn("--amp", script)
         self.assertNotIn("scripts/train_baseline.py", script)

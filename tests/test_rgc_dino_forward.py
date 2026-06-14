@@ -115,6 +115,27 @@ class RgcDinoModelTest(unittest.TestCase):
         self.assertEqual(outputs["pred_boxes"].shape, (2, 2, 4))
         self.assertIsNone(outputs["dn_meta"])
 
+    def test_does_not_inject_fusion_into_masked_padding(self) -> None:
+        base = FakeDino()
+        wrapper = RgcDinoModel(base, feature_fusion=AddOneFusion())
+        mask = torch.zeros(2, 4, 4, dtype=torch.bool)
+        mask[1, 2:, :] = True
+        mask[1, :, 3:] = True
+        rgb = FakeNestedTensor(torch.zeros(2, 8, 4, 4), mask)
+        samples = RgcDinoSamples(
+            rgb=rgb,
+            infrared=torch.randn(2, 1, 16, 16),
+            depth=torch.randn(2, 1, 16, 16),
+            quality=torch.randn(2, 24),
+        )
+
+        wrapper(samples)
+
+        fused = base.transformer.seen_srcs[0]
+        self.assertTrue(torch.equal(fused[1, :, 0:2, 0:3], torch.ones(8, 2, 3)))
+        self.assertTrue(torch.equal(fused[1, :, 2:, :], torch.zeros(8, 2, 4)))
+        self.assertTrue(torch.equal(fused[1, :, :, 3:], torch.zeros(8, 4, 1)))
+
 
 if __name__ == "__main__":
     unittest.main()

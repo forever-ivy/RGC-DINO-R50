@@ -103,6 +103,7 @@ class TrainRgcDinoScriptTest(unittest.TestCase):
                 limit_train=None,
                 limit_val=None,
                 image_max_side=4,
+                train_image_max_sides=None,
                 random_horizontal_flip_prob=0.0,
                 batch_size=1,
                 num_workers=0,
@@ -112,6 +113,51 @@ class TrainRgcDinoScriptTest(unittest.TestCase):
 
             self.assertEqual(len(train_loader.dataset), 2)
             self.assertIsNone(val_loader)
+
+    def test_build_loaders_uses_multiscale_for_training_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "dataset"
+            labels = root / "labels"
+            for modality in ("visible", "infrared", "depth"):
+                (root / modality).mkdir(parents=True)
+            labels.mkdir()
+            for sample_id in ("train_a", "val_a"):
+                Image.fromarray(np.zeros((4, 8, 3), dtype=np.uint8)).save(root / "visible" / f"{sample_id}.png")
+                Image.fromarray(np.zeros((4, 8, 3), dtype=np.uint8)).save(root / "infrared" / f"{sample_id}.png")
+                Image.fromarray(np.zeros((4, 8), dtype=np.uint16)).save(root / "depth" / f"{sample_id}.png")
+                (labels / f"{sample_id}.txt").write_text("0 0.5 0.5 0.5 0.5\n", encoding="utf-8")
+            assignments = Path(tmp) / "fold_assignments.jsonl"
+            assignments.write_text(
+                "\n".join(
+                    [
+                        '{"fold": 0, "sample_id": "train_a", "split": "train"}',
+                        '{"fold": 0, "sample_id": "val_a", "split": "val"}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            args = argparse.Namespace(
+                dataset_root=root,
+                labels=labels,
+                assignments=assignments,
+                fold=0,
+                train_all=False,
+                limit_train=None,
+                limit_val=None,
+                image_max_side=4,
+                train_image_max_sides=[4, 8],
+                random_horizontal_flip_prob=0.0,
+                batch_size=1,
+                num_workers=0,
+            )
+
+            train_loader, val_loader = _build_loaders(args)
+
+            self.assertEqual(train_loader.dataset.image_max_sides, (4, 8))
+            self.assertIsNone(val_loader.dataset.image_max_sides)
+            self.assertEqual(val_loader.dataset.image_max_side, 4)
 
 
 if __name__ == "__main__":

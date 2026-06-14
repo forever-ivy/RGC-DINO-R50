@@ -27,6 +27,7 @@ class MultimodalDinoDataset(Dataset):
         samples: Sequence[MultimodalSample],
         *,
         image_max_side: int | None = 640,
+        image_max_sides: Sequence[int] | None = None,
         clip_labels: bool = True,
         random_horizontal_flip_prob: float = 0.0,
         quality_cache: dict[str, dict[str, float]] | None = None,
@@ -35,10 +36,16 @@ class MultimodalDinoDataset(Dataset):
             raise ValueError("samples must not be empty")
         if image_max_side is not None and image_max_side <= 0:
             raise ValueError("image_max_side must be positive")
+        if image_max_sides is not None:
+            if not image_max_sides:
+                raise ValueError("image_max_sides must not be empty")
+            if any(side <= 0 for side in image_max_sides):
+                raise ValueError("image_max_sides must contain only positive integers")
         if not 0.0 <= random_horizontal_flip_prob <= 1.0:
             raise ValueError("random_horizontal_flip_prob must be in [0, 1]")
         self.samples = tuple(samples)
         self.image_max_side = image_max_side
+        self.image_max_sides = tuple(image_max_sides) if image_max_sides is not None else None
         self.clip_labels = clip_labels
         self.random_horizontal_flip_prob = random_horizontal_flip_prob
         self.quality_cache = quality_cache
@@ -51,6 +58,7 @@ class MultimodalDinoDataset(Dataset):
         labels_dir: str | Path,
         sample_ids: Sequence[str] | None = None,
         image_max_side: int | None = 640,
+        image_max_sides: Sequence[int] | None = None,
         clip_labels: bool = True,
         random_horizontal_flip_prob: float = 0.0,
         quality_cache: dict[str, dict[str, float]] | None = None,
@@ -69,6 +77,7 @@ class MultimodalDinoDataset(Dataset):
         return cls(
             samples,
             image_max_side=image_max_side,
+            image_max_sides=image_max_sides,
             clip_labels=clip_labels,
             random_horizontal_flip_prob=random_horizontal_flip_prob,
             quality_cache=loaded_quality_cache,
@@ -82,7 +91,7 @@ class MultimodalDinoDataset(Dataset):
         horizontal_flip = self._should_flip_horizontally()
         loaded = _load_modalities(
             sample,
-            image_max_side=self.image_max_side,
+            image_max_side=self._select_image_max_side(),
             horizontal_flip=horizontal_flip,
             quality_cache=self.quality_cache,
         )
@@ -104,6 +113,11 @@ class MultimodalDinoDataset(Dataset):
 
     def _should_flip_horizontally(self) -> bool:
         return self.random_horizontal_flip_prob > 0.0 and random.random() < self.random_horizontal_flip_prob
+
+    def _select_image_max_side(self) -> int | None:
+        if self.image_max_sides is None:
+            return self.image_max_side
+        return random.choice(self.image_max_sides)
 
 
 class MultimodalDinoInferenceDataset(Dataset):

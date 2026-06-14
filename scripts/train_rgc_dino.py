@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--image-max-side", type=int, default=640)
+    parser.add_argument(
+        "--train-image-max-sides",
+        type=int,
+        nargs="+",
+        help="optional per-sample train-time multi-scale longest-side choices; validation uses --image-max-side",
+    )
     parser.add_argument("--random-horizontal-flip-prob", type=float, default=0.5)
     parser.add_argument("--quality-cache", type=Path)
     parser.add_argument("--side-base-channels", type=int, default=32)
@@ -352,6 +358,7 @@ def _build_loaders(args: argparse.Namespace):
         labels_dir=args.labels,
         sample_ids=train_ids,
         image_max_side=args.image_max_side,
+        image_max_sides=getattr(args, "train_image_max_sides", None),
         random_horizontal_flip_prob=args.random_horizontal_flip_prob,
         quality_cache=quality_cache,
     )

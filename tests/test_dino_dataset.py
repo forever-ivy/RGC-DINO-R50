@@ -154,6 +154,35 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
             self.assertGreater(float(sample["depth"][0, 0, 0]), float(sample["depth"][0, 0, 1]))
             self.assertTrue(torch.allclose(target["boxes"], torch.tensor([[0.75, 0.5, 0.2, 1.0]])))
 
+    def test_random_image_max_side_is_selected_per_training_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "train"
+            labels = root / "labels"
+            for modality in ("visible", "infrared", "depth"):
+                (root / modality).mkdir(parents=True)
+            labels.mkdir()
+
+            rgb = np.zeros((10, 20, 3), dtype=np.uint8)
+            infrared = np.zeros((10, 20, 3), dtype=np.uint8)
+            depth = np.full((10, 20), 1000, dtype=np.uint16)
+            Image.fromarray(rgb).save(root / "visible" / "sample_scale.png")
+            Image.fromarray(infrared).save(root / "infrared" / "sample_scale.png")
+            Image.fromarray(depth).save(root / "depth" / "sample_scale.png")
+            (labels / "sample_scale.txt").write_text("2 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            dataset = MultimodalDinoDataset.from_paths(
+                dataset_root=root,
+                labels_dir=labels,
+                sample_ids=["sample_scale"],
+                image_max_sides=(10, 16),
+            )
+
+            with mock.patch("rgc_dino.dino_dataset.random.choice", return_value=16):
+                sample, target = dataset[0]
+
+            self.assertEqual(sample["rgb"].shape, (3, 8, 16))
+            self.assertTrue(torch.equal(target["size"], torch.tensor([8, 16])))
+
     def test_uses_quality_cache_without_recomputing_features(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "train"

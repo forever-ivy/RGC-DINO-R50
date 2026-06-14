@@ -63,12 +63,14 @@ class RgcDinoModel(nn.Module):
         features, poss = self.dino_model.backbone(rgb_samples)
 
         srcs, masks, poss = self._project_dino_features(features, poss, rgb_samples)
-        srcs = self.feature_fusion(
+        projected_srcs = srcs
+        fused_srcs = self.feature_fusion(
             srcs,
             rgc_samples.infrared,
             rgc_samples.depth,
             rgc_samples.quality,
         )
+        srcs = _restore_masked_feature_positions(fused_srcs, projected_srcs, masks)
         return self._run_dino_transformer_and_heads(srcs, masks, poss, targets)
 
     def compute_fusion_gates(self, samples: RgcDinoSamples | Mapping[str, Any]) -> Mapping[str, list[Tensor]]:
@@ -298,6 +300,21 @@ def _to_device(value: Any, device: torch.device | str) -> Any:
     if isinstance(value, list):
         return [_to_device(item, device) for item in value]
     return value
+
+
+def _restore_masked_feature_positions(
+    fused_srcs: Sequence[Tensor],
+    original_srcs: Sequence[Tensor],
+    masks: Sequence[Tensor],
+) -> list[Tensor]:
+    restored: list[Tensor] = []
+    for level, (fused, original, mask) in enumerate(zip(fused_srcs, original_srcs, masks)):
+        if fused.shape != original.shape:
+            raise ValueError(f"fused feature level {level} shape changed from {tuple(original.shape)} to {tuple(fused.shape)}")
+        if mask.shape != fused.shape[0:1] + fused.shape[-2:]:
+            raise ValueError(f"mask level {level} shape {tuple(mask.shape)} does not match feature {tuple(fused.shape)}")
+        restored.append(torch.where(mask.to(device=fused.device)[:, None], original, fused))
+    return restored
 
 
 def _inverse_sigmoid(x: Tensor, eps: float = 1e-5) -> Tensor:

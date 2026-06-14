@@ -146,7 +146,7 @@ python scripts/check_dino_integration.py --dino-root external/IDEA-Research-DINO
 python scripts/write_bsub_dino_smoke.py --output outputs/jobs/dino_smoke.lsf
 ```
 
-生成当前 RGC-DINO fold0 短训脚本。脚本会先预计算质量特征缓存，再优先从官方 DINO R50 4scale checkpoint 初始化新 RGC-DINO；若 `outputs/checkpoints/checkpoint0011_4scale.pth` 不存在，则退回已有 A0 checkpoint。训练启用 depth valid mask、水平翻转、gate 日志和 loss-only validation：
+生成当前 RGC-DINO fold0 短训脚本。脚本会先预计算质量特征缓存，再优先从官方 DINO R50 4scale checkpoint 初始化新 RGC-DINO；若 `outputs/checkpoints/checkpoint0011_4scale.pth` 不存在，则退回已有 A0 checkpoint。训练启用 depth valid mask、训练多尺度最长边抖动、水平翻转、gate 日志和 loss-only validation：
 
 ```sh
 python scripts/write_bsub_train.py --output outputs/jobs/train_rgc_dino_fold0_short.lsf

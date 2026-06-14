@@ -12,6 +12,7 @@ DEFAULT_TRAIN_OUTPUT = ROOT / "outputs" / "rgc_dino" / "rgc_dino_fold0_short_ide
 DEFAULT_QUALITY_CACHE = ROOT / "outputs" / "cache" / "quality_features_train.json"
 DEFAULT_OFFICIAL_DINO_CHECKPOINT = ROOT / "outputs" / "checkpoints" / "checkpoint0011_4scale.pth"
 DEFAULT_FALLBACK_INIT_CHECKPOINT = ROOT / "outputs" / "checkpoints" / "a0_fold0_best_regular_snapshot_20260614_0131.pth"
+DEFAULT_TRAIN_IMAGE_MAX_SIDES = (480, 560, 640, 720)
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr-drop", type=int, default=3)
     parser.add_argument("--fold", type=int, default=0)
     parser.add_argument("--image-max-side", type=int, default=640)
+    parser.add_argument("--train-image-max-sides", type=int, nargs="+", default=list(DEFAULT_TRAIN_IMAGE_MAX_SIDES))
     parser.add_argument("--official-dino-checkpoint", type=Path, default=DEFAULT_OFFICIAL_DINO_CHECKPOINT)
     parser.add_argument("--fallback-init-checkpoint", type=Path, default=DEFAULT_FALLBACK_INIT_CHECKPOINT)
     parser.add_argument("--quality-cache", type=Path, default=DEFAULT_QUALITY_CACHE)
@@ -47,6 +49,7 @@ def main() -> int:
         lr_drop=args.lr_drop,
         fold=args.fold,
         image_max_side=args.image_max_side,
+        train_image_max_sides=tuple(args.train_image_max_sides),
         official_dino_checkpoint=args.official_dino_checkpoint,
         fallback_init_checkpoint=args.fallback_init_checkpoint,
         quality_cache=args.quality_cache,
@@ -74,6 +77,7 @@ def render_bsub_script(
     lr_drop: int,
     fold: int,
     image_max_side: int,
+    train_image_max_sides: tuple[int, ...],
     official_dino_checkpoint: Path,
     fallback_init_checkpoint: Path,
     quality_cache: Path,
@@ -83,6 +87,7 @@ def render_bsub_script(
     batch_size: int = 1,
     num_workers: int = 2,
 ) -> str:
+    train_scales = " ".join(str(side) for side in train_image_max_sides)
     return f"""#!/bin/sh
 #BSUB -J {job_name}
 #BSUB -q {queue}
@@ -118,6 +123,7 @@ CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src python scripts/train_rgc_dino.py \\
   --batch-size {batch_size} \\
   --num-workers {num_workers} \\
   --image-max-side {image_max_side} \\
+  --train-image-max-sides {train_scales} \\
   --init-dino-checkpoint "$INIT_DINO_CHECKPOINT" \\
   --quality-cache {quality_cache} \\
   --random-horizontal-flip-prob {random_horizontal_flip_prob} \\
