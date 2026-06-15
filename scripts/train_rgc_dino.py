@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from collections import Counter
 import json
 import os
@@ -98,15 +99,15 @@ def main() -> int:
     if quality_cache is not None:
         _configure_quality_stats(wrapped_model, quality_cache)
     if args.init_dino_checkpoint is not None:
-        report = load_checkpoint_into_model(
-            wrapped_model.dino_model,
+        report, loaded_scope = _load_init_checkpoint(
+            wrapped_model,
             args.init_dino_checkpoint,
-            skip_mismatched_shapes=True,
         )
         print(
             json.dumps(
                 {
                     "loaded_init_dino_checkpoint": str(report.checkpoint_path),
+                    "loaded_scope": loaded_scope,
                     "missing_keys": len(report.missing_keys),
                     "skipped_shape_mismatch_keys": len(report.skipped_keys),
                     "unexpected_keys": len(report.unexpected_keys),
@@ -281,6 +282,52 @@ def _build_official_args(args: argparse.Namespace) -> argparse.Namespace:
     official_args.save_results = False
     official_args.save_log = False
     return official_args
+
+
+def _load_init_checkpoint(
+    model: RgcDinoModel,
+    checkpoint_path: Path,
+) -> tuple[Any, str]:
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    scope = _infer_init_checkpoint_scope(payload)
+    if scope == "rgc":
+        report = load_checkpoint_into_model(
+            model,
+            checkpoint_path,
+            skip_mismatched_shapes=True,
+            weights_only=False,
+        )
+    elif scope == "dino_model_payload":
+        report = load_checkpoint_into_model(
+            model.dino_model,
+            checkpoint_path,
+            state_key="dino_model",
+            skip_mismatched_shapes=True,
+            weights_only=False,
+        )
+    else:
+        report = load_checkpoint_into_model(
+            model.dino_model,
+            checkpoint_path,
+            skip_mismatched_shapes=True,
+            weights_only=False,
+        )
+    return report, scope
+
+
+def _infer_init_checkpoint_scope(payload: Any) -> str:
+    if not isinstance(payload, Mapping):
+        return "dino"
+    model_state = payload.get("model")
+    if isinstance(model_state, Mapping) and _looks_like_rgc_state(model_state):
+        return "rgc"
+    if "dino_model" in payload:
+        return "dino_model_payload"
+    return "dino"
+
+
+def _looks_like_rgc_state(state: Mapping[str, Any]) -> bool:
+    return any(str(key).startswith(("dino_model.", "feature_fusion.")) for key in state)
 
 
 def _resolve_lr_drop(*, config_lr_drop: int, epochs: int, explicit_lr_drop: int | None) -> int:

@@ -13,6 +13,7 @@ from scripts.train_rgc_dino import (
     _build_loaders,
     _build_official_args,
     _finalize_gate_stats,
+    _infer_init_checkpoint_scope,
     _quality_median_mad,
     _validate_param_group_coverage,
 )
@@ -55,6 +56,34 @@ class TrainRgcDinoScriptTest(unittest.TestCase):
         )
 
         _validate_param_group_coverage(model, [{"params": list(model.parameters())}])
+
+    def test_infer_init_checkpoint_scope_detects_rgc_wrapper_state(self) -> None:
+        payload = {
+            "model": {
+                "dino_model.transformer.level_embed": torch.zeros(1),
+                "feature_fusion.fusion.alpha_prior": torch.zeros(1),
+            }
+        }
+
+        self.assertEqual(_infer_init_checkpoint_scope(payload), "rgc")
+
+    def test_infer_init_checkpoint_scope_detects_bare_dino_state(self) -> None:
+        payload = {
+            "model": {
+                "transformer.level_embed": torch.zeros(1),
+            }
+        }
+
+        self.assertEqual(_infer_init_checkpoint_scope(payload), "dino")
+
+    def test_infer_init_checkpoint_scope_detects_dino_model_payload(self) -> None:
+        payload = {
+            "dino_model": {
+                "transformer.level_embed": torch.zeros(1),
+            }
+        }
+
+        self.assertEqual(_infer_init_checkpoint_scope(payload), "dino_model_payload")
 
     def test_gate_stats_are_aggregated_per_modality_and_level(self) -> None:
         collected: dict[str, list[dict[str, float]]] = {}
