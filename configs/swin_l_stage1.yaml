@@ -1,0 +1,94 @@
+# Swin-L Stage 1 配置：2×RTX 3090优化版本
+# 目标：从45分提升到49-50分
+# 训练时间：约32小时
+
+# 继承DINO基础配置
+_base_: ../external/IDEA-Research-DINO/config/DINO/DINO_4scale.py
+
+# 基础设置
+num_classes: 12
+dn_labelbook_size: 12
+
+# Swin-L backbone
+backbone: swin_L_224_22k
+backbone_dir: weights/
+backbone_freeze_keywords: null  # 不冻结任何层
+
+# 训练阶段配置
+epochs: 36
+lr_drop: 32  # 在32 epoch时降低学习率
+batch_size: 2  # 2卡 × 1张/卡 = 总batch_size 2
+use_ema: true
+ema_decay: 0.9997
+save_checkpoint_interval: 1
+
+# 渐进式训练
+# Stage 1: epoch 0-12, 640分辨率
+# Stage 2: epoch 12-36, 800分辨率
+data_aug_scales: [640, 672, 704, 736, 768, 800]
+data_aug_max_size: 1333
+
+# DINO模型配置
+hidden_dim: 256
+num_queries: 900
+num_feature_levels: 4
+num_select: 300
+enc_layers: 6
+dec_layers: 6
+nheads: 8
+dim_feedforward: 2048
+dropout: 0.0
+
+# DN训练
+dn_number: 100
+dn_box_noise_scale: 0.4
+dn_label_noise_ratio: 0.5
+
+# 优化器
+lr: 0.00002  # Swin-L较小学习率 (2e-5)
+lr_backbone: 0.000005  # backbone更小 (5e-6)
+weight_decay: 0.05
+clip_max_norm: 0.1
+
+# 数据增强
+random_horizontal_flip_prob: 0.5
+color_jitter_prob: 0.5
+blur_prob: 0.2
+
+# RGC融合配置
+fusion:
+  enable: true
+  mode: reliability_gated_residual
+  q_dim: 24
+  alpha_prior: 0.35
+  gate_floor: 0.05
+  gate_ceil: 0.90
+  gate_loss_weight: 0.04
+
+# 损失函数
+aux_loss: true
+set_cost_class: 2.0
+set_cost_bbox: 5.0
+set_cost_giou: 2.0
+cls_loss_coef: 2.0
+bbox_loss_coef: 5.0
+giou_loss_coef: 2.0
+focal_alpha: 0.25
+
+# 训练优化
+gradient_checkpointing: true  # 节省显存
+# amp: true  # 混合精度（通过命令行 --amp 启用）
+zero_grad_set_to_none: true
+
+# DeepSpeed配置（需要在命令行启用）
+# --deepspeed configs/deepspeed_config.json
+
+# 评估配置
+eval_interval: 1
+eval_metric: competition_map_50_95
+
+# 数据路径和输出目录注释掉，由命令行传入
+# coco_path: source/
+# train_json: train.json
+# val_json: val.json
+# output_dir: outputs/swin_l_stage1

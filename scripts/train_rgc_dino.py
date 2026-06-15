@@ -66,6 +66,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-batches", type=int, default=0)
     parser.add_argument("--log-gates-batches", type=int, default=0)
     parser.add_argument("--init-dino-checkpoint", type=Path)
+    parser.add_argument(
+        "--pretrain-dino-weights",
+        type=Path,
+        help="official DINO COCO pretrained weights (e.g. checkpoint0011_4scale.pth) used to "
+        "initialize the detector transformer/heads; class-dependent params with mismatched "
+        "shapes (91-class COCO vs project classes) are skipped automatically",
+    )
     parser.add_argument("--resume", type=Path, help="resume a prior RGC-DINO training checkpoint")
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--debug", action="store_true", help="use official engine debug break behavior")
@@ -80,6 +87,12 @@ def main() -> int:
         return 2
     if args.resume is not None and args.init_dino_checkpoint is not None:
         print("--resume and --init-dino-checkpoint cannot be used together", file=sys.stderr)
+        return 2
+    if args.pretrain_dino_weights is not None and args.init_dino_checkpoint is not None:
+        print("--pretrain-dino-weights and --init-dino-checkpoint cannot be used together", file=sys.stderr)
+        return 2
+    if args.pretrain_dino_weights is not None and args.resume is not None:
+        print("--pretrain-dino-weights and --resume cannot be used together", file=sys.stderr)
         return 2
     if args.train_all and args.val_batches > 0:
         print("--train-all requires --val-batches 0 because no validation split is built", file=sys.stderr)
@@ -98,6 +111,26 @@ def main() -> int:
     quality_cache = load_quality_feature_cache(args.quality_cache) if args.quality_cache is not None else None
     if quality_cache is not None:
         _configure_quality_stats(wrapped_model, quality_cache)
+    if args.pretrain_dino_weights is not None:
+        report = load_checkpoint_into_model(
+            wrapped_model.dino_model,
+            args.pretrain_dino_weights,
+            state_key="model",
+            skip_mismatched_shapes=True,
+            weights_only=False,
+        )
+        print(
+            json.dumps(
+                {
+                    "loaded_pretrain_dino_weights": str(report.checkpoint_path),
+                    "missing_keys": len(report.missing_keys),
+                    "skipped_shape_mismatch_keys": len(report.skipped_keys),
+                    "unexpected_keys": len(report.unexpected_keys),
+                    "skipped_keys_sample": list(report.skipped_keys[:8]),
+                },
+                sort_keys=True,
+            )
+        )
     if args.init_dino_checkpoint is not None:
         report, loaded_scope = _load_init_checkpoint(
             wrapped_model,

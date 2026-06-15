@@ -15,8 +15,7 @@ class WriteBsubTrainTest(unittest.TestCase):
             lr_drop=3,
             fold=0,
             image_max_side=640,
-            official_dino_checkpoint=Path("outputs/checkpoints/checkpoint0011_4scale.pth"),
-            fallback_init_checkpoint=Path("outputs/checkpoints/a0.pth"),
+            pretrain_dino_weights=Path("/data1/liuxuan/checkpoints/dino/checkpoint0011_4scale.pth"),
             quality_cache=Path("outputs/cache/quality.json"),
             random_horizontal_flip_prob=0.5,
             train_image_max_sides=(480, 640, 800),
@@ -26,9 +25,16 @@ class WriteBsubTrainTest(unittest.TestCase):
         self.assertIn("#BSUB -J rgc-short", script)
         self.assertIn("python scripts/cache_quality_features.py", script)
         self.assertIn("python scripts/train_rgc_dino.py", script)
-        self.assertIn('INIT_DINO_CHECKPOINT="outputs/checkpoints/checkpoint0011_4scale.pth"', script)
-        self.assertIn('INIT_DINO_CHECKPOINT="outputs/checkpoints/a0.pth"', script)
-        self.assertIn('--init-dino-checkpoint "$INIT_DINO_CHECKPOINT"', script)
+        self.assertIn(
+            'PRETRAIN_DINO_WEIGHTS="/data1/liuxuan/checkpoints/dino/checkpoint0011_4scale.pth"',
+            script,
+        )
+        self.assertIn('--pretrain-dino-weights "$PRETRAIN_DINO_WEIGHTS"', script)
+        # Missing official weights must hard-fail, never silently fall back to a
+        # self-trained checkpoint (which is what masked the missing COCO pretrain).
+        self.assertIn('if [ ! -f "$PRETRAIN_DINO_WEIGHTS" ]; then', script)
+        self.assertIn("exit 2", script)
+        self.assertNotIn("--init-dino-checkpoint", script)
         self.assertIn("--quality-cache outputs/cache/quality.json", script)
         self.assertIn("--random-horizontal-flip-prob 0.5", script)
         self.assertIn("--train-image-max-sides 480 640 800", script)

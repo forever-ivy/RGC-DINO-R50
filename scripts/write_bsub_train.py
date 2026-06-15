@@ -10,8 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "outputs" / "jobs" / "train_rgc_dino_fold0_short.lsf"
 DEFAULT_TRAIN_OUTPUT = ROOT / "outputs" / "rgc_dino" / "rgc_dino_fold0_short_identity_depth_aug"
 DEFAULT_QUALITY_CACHE = ROOT / "outputs" / "cache" / "quality_features_train.json"
-DEFAULT_OFFICIAL_DINO_CHECKPOINT = ROOT / "outputs" / "checkpoints" / "checkpoint0011_4scale.pth"
-DEFAULT_FALLBACK_INIT_CHECKPOINT = ROOT / "outputs" / "checkpoints" / "a0_fold0_best_regular_snapshot_20260614_0131.pth"
+DEFAULT_PRETRAIN_DINO_WEIGHTS = Path("/data1/liuxuan/checkpoints/dino/checkpoint0011_4scale.pth")
 DEFAULT_TRAIN_IMAGE_MAX_SIDES = (480, 560, 640, 720)
 
 
@@ -27,8 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fold", type=int, default=0)
     parser.add_argument("--image-max-side", type=int, default=640)
     parser.add_argument("--train-image-max-sides", type=int, nargs="+", default=list(DEFAULT_TRAIN_IMAGE_MAX_SIDES))
-    parser.add_argument("--official-dino-checkpoint", type=Path, default=DEFAULT_OFFICIAL_DINO_CHECKPOINT)
-    parser.add_argument("--fallback-init-checkpoint", type=Path, default=DEFAULT_FALLBACK_INIT_CHECKPOINT)
+    parser.add_argument("--pretrain-dino-weights", type=Path, default=DEFAULT_PRETRAIN_DINO_WEIGHTS)
     parser.add_argument("--quality-cache", type=Path, default=DEFAULT_QUALITY_CACHE)
     parser.add_argument("--random-horizontal-flip-prob", type=float, default=0.5)
     parser.add_argument("--log-gates-batches", type=int, default=2)
@@ -50,8 +48,7 @@ def main() -> int:
         fold=args.fold,
         image_max_side=args.image_max_side,
         train_image_max_sides=tuple(args.train_image_max_sides),
-        official_dino_checkpoint=args.official_dino_checkpoint,
-        fallback_init_checkpoint=args.fallback_init_checkpoint,
+        pretrain_dino_weights=args.pretrain_dino_weights,
         quality_cache=args.quality_cache,
         random_horizontal_flip_prob=args.random_horizontal_flip_prob,
         log_gates_batches=args.log_gates_batches,
@@ -78,8 +75,7 @@ def render_bsub_script(
     fold: int,
     image_max_side: int,
     train_image_max_sides: tuple[int, ...],
-    official_dino_checkpoint: Path,
-    fallback_init_checkpoint: Path,
+    pretrain_dino_weights: Path,
     quality_cache: Path,
     random_horizontal_flip_prob: float,
     log_gates_batches: int,
@@ -108,12 +104,10 @@ python scripts/cache_quality_features.py \\
   --max-side-for-quality {image_max_side} \\
   --num-workers {num_workers}
 
-INIT_DINO_CHECKPOINT="{official_dino_checkpoint}"
-if [ ! -f "$INIT_DINO_CHECKPOINT" ]; then
-  INIT_DINO_CHECKPOINT="{fallback_init_checkpoint}"
-fi
-if [ ! -f "$INIT_DINO_CHECKPOINT" ]; then
-  echo "missing init checkpoint: $INIT_DINO_CHECKPOINT" >&2
+PRETRAIN_DINO_WEIGHTS="{pretrain_dino_weights}"
+if [ ! -f "$PRETRAIN_DINO_WEIGHTS" ]; then
+  echo "missing official DINO COCO pretrained weights: $PRETRAIN_DINO_WEIGHTS" >&2
+  echo "download checkpoint0011_4scale.pth from IDEA-Research/DINO and place it there" >&2
   exit 2
 fi
 
@@ -126,7 +120,7 @@ CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src python scripts/train_rgc_dino.py \\
   --num-workers {num_workers} \\
   --image-max-side {image_max_side} \\
   --train-image-max-sides {train_scales} \\
-  --init-dino-checkpoint "$INIT_DINO_CHECKPOINT" \\
+  --pretrain-dino-weights "$PRETRAIN_DINO_WEIGHTS" \\
   --quality-cache {quality_cache} \\
   --random-horizontal-flip-prob {random_horizontal_flip_prob} \\
   --val-batches {val_batches} \\
