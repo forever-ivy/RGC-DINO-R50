@@ -1,8 +1,7 @@
-import importlib.util
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,9 +10,13 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "monitor_competi
 
 
 def load_monitor_module():
+    import importlib.util
+    import sys
+
     spec = importlib.util.spec_from_file_location("monitor_competition", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules["monitor_competition"] = module
     spec.loader.exec_module(module)
     return module
 
@@ -39,8 +42,8 @@ class MonitorCompetitionTest(unittest.TestCase):
             class Result:
                 returncode = 0
 
-            def fake_run(cmd, timeout):
-                calls.append((cmd, timeout))
+            def fake_run(cmd, timeout, cwd):
+                calls.append((cmd, timeout, cwd))
                 return Result()
 
             with patch.object(module.subprocess, "run", fake_run):
@@ -71,6 +74,66 @@ class MonitorCompetitionTest(unittest.TestCase):
 
         self.assertIsNotNone(state["last_submission"])
         datetime.fromisoformat(state["last_submission"])
+        self.assertEqual(len(state["ignored_sha256s"]), 1)
+
+    def test_candidate_requires_promotion_sidecar_by_default(self) -> None:
+        module = load_monitor_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zip_path = root / "candidate.zip"
+            zip_path.write_bytes(b"zip")
+            monitor = module.CompetitionMonitor(output_dir=root / "monitor")
+
+            decision = monitor.evaluate_candidate(zip_path)
+
+        self.assertFalse(decision.eligible)
+        self.assertIn("missing .promotion.json", decision.reason)
+
+    def test_candidate_with_sidecar_and_manifest_is_eligible(self) -> None:
+        module = load_monitor_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zip_path = root / "candidate.zip"
+            zip_path.write_bytes(b"zip")
+            manifest = root / "candidate.manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            sha = module.file_sha256(zip_path)
+            zip_path.with_suffix(".promotion.json").write_text(
+                json.dumps({"zip_sha256": sha, "manifest_path": str(manifest), "ready_for_submit": True}),
+                encoding="utf-8",
+            )
+            monitor = module.CompetitionMonitor(output_dir=root / "monitor")
+
+            decision = monitor.evaluate_candidate(zip_path)
+
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.sha256, sha)
+
+    def test_candidate_skips_submitted_sha_and_cooldown(self) -> None:
+        module = load_monitor_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zip_path = root / "candidate.zip"
+            zip_path.write_bytes(b"zip")
+            manifest = root / "candidate.manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            sha = module.file_sha256(zip_path)
+            zip_path.with_suffix(".promotion.json").write_text(
+                json.dumps({"zip_sha256": sha, "manifest_path": str(manifest), "ready_for_submit": True}),
+                encoding="utf-8",
+            )
+            monitor = module.CompetitionMonitor(output_dir=root / "monitor")
+            monitor.state["submitted_sha256s"] = [sha]
+
+            decision = monitor.evaluate_candidate(zip_path)
+            self.assertFalse(decision.eligible)
+            self.assertIn("already submitted", decision.reason)
+
+            monitor.state["submitted_sha256s"] = []
+            monitor.state["cooldown_until"] = (datetime.now() + timedelta(hours=1)).isoformat()
+            decision = monitor.evaluate_candidate(zip_path)
+            self.assertFalse(decision.eligible)
+            self.assertIn("cooldown", decision.reason)
 
 
 if __name__ == "__main__":

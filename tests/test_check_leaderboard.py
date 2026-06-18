@@ -38,9 +38,6 @@ class CheckLeaderboardTest(unittest.TestCase):
         class FakeRequests:
             RequestException = Exception
 
-            def get(self, *args, **kwargs):
-                return FakeResponse({"unexpected": True})
-
             def post(self, url, **kwargs):
                 calls.append((url, kwargs["json"]))
                 if kwargs["json"]["type"] == "JSJD":
@@ -99,6 +96,40 @@ class CheckLeaderboardTest(unittest.TestCase):
             ],
         )
 
+    def test_fetch_leaderboard_paginates(self) -> None:
+        module = load_check_leaderboard_module()
+        pages = {
+            0: [{"XH_": "1", "TDMC_": "第一队", "FS_": "0.8"}],
+            1: [{"XH_": "2", "TDMC_": "都是同龄人队", "FS_": "0.7"}],
+            2: [],
+        }
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self.payload
+
+        class FakeRequests:
+            RequestException = Exception
+
+            def post(self, url, **kwargs):
+                payload = kwargs["json"]
+                if payload["type"] == "JSJD":
+                    return FakeResponse({"data": {"JDMC_": "初赛"}})
+                return FakeResponse({"data": pages[payload["pageNo"]]})
+
+        module.requests = FakeRequests()
+
+        result = module.fetch_leaderboard(page_size=1, max_pages=3, return_metadata=True)
+
+        self.assertEqual(result["fetched_pages"], 3)
+        self.assertEqual([row["team_name"] for row in result["teams"]], ["第一队", "都是同龄人队"])
+
     def test_parse_jsphb_entries_normalizes_empty_scores(self) -> None:
         module = load_check_leaderboard_module()
 
@@ -119,10 +150,14 @@ class CheckLeaderboardTest(unittest.TestCase):
 
     def test_main_accepts_normalized_fetch_results(self) -> None:
         module = load_check_leaderboard_module()
-        module.fetch_leaderboard = lambda cookies=None: [
-            {"rank": 1, "team_name": "第一队", "score": 0.8},
-            {"rank": 2, "team_name": "都是同龄人队", "score": 0.7},
-        ]
+        module.fetch_leaderboard = lambda cookies=None, page_size=20, max_pages=10, return_metadata=True: {
+            "teams": [
+                {"rank": 1, "team_name": "第一队", "score": 0.8},
+                {"rank": 2, "team_name": "都是同龄人队", "score": 0.7},
+            ],
+            "fetched_pages": 1,
+            "page_size": 20,
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "rank.json"
@@ -142,6 +177,7 @@ class CheckLeaderboardTest(unittest.TestCase):
         self.assertEqual(saved["rank"], 2)
         self.assertEqual(saved["team_name"], "都是同龄人队")
         self.assertEqual(saved["total_teams"], 2)
+        self.assertEqual(saved["fetched_pages"], 1)
 
 
 if __name__ == "__main__":

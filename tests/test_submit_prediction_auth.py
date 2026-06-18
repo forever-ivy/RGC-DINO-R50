@@ -118,6 +118,25 @@ class SubmitPredictionAuthTest(unittest.TestCase):
 
         self.assertIs(module.choose_zip_file_input(inputs), inputs[1])
 
+    def test_classify_submission_page_distinguishes_unconfirmed(self) -> None:
+        module = load_submit_prediction_module()
+
+        status, _message, success = module.classify_submission_page("页面没有明显结果")
+
+        self.assertEqual(status, module.STATUS_SUBMIT_CLICKED_UNCONFIRMED)
+        self.assertFalse(success)
+
+    def test_classify_submission_page_detects_success_and_error(self) -> None:
+        module = load_submit_prediction_module()
+
+        status, _message, success = module.classify_submission_page("提交成功")
+        self.assertEqual(status, module.STATUS_SUBMIT_CONFIRMED)
+        self.assertTrue(success)
+
+        status, _message, success = module.classify_submission_page("上传失败")
+        self.assertEqual(status, module.STATUS_UPLOAD_VALIDATION_FAILED)
+        self.assertFalse(success)
+
 
 if __name__ == "__main__":
     unittest.main()
