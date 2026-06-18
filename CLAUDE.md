@@ -40,6 +40,15 @@ Expected environment:
 - PyTorch 2.12.0+cu126
 - CUDA build 12.6
 
+## Network Access Notes
+
+This server has partial outbound network access. Some public sites may be reachable while others (especially certain international domains) may fail from the server itself.
+
+- For literature review, paper search, method comparison, and general web research, Claude may still use its built-in web search/research tools even when the server cannot directly open the target site.
+- This does **not** relax the competition rule against online API calls in the project pipeline; training, inference, and submission artifacts must remain offline/local.
+- When code, PDFs, or model weights must actually be downloaded onto the server, prefer reachable mirrors, GitHub releases, author pages, or have the user download locally and upload under `/data1/liuxuan/`.
+- If a resource host is unreachable from the server, treat that as a deployment/download constraint rather than a reason to skip literature search.
+
 ## Competition Automation & Auto-submit
 
 Use the project automation for rank checks and submissions. Do not print or commit sensitive files:

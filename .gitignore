@@ -33,6 +33,8 @@ data/cache/
 data/images/
 # External third-party source trees
 external/IDEA-Research-DINO/
+external/Co-DETR/
+external/InternImage-master/
 source/images/
 source/rgb/
 source/ir/

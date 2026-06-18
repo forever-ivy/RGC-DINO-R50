@@ -1,535 +1,311 @@
-# 2×RTX 3090可行方案：从46分冲击60+分（2个月完整路线）
+# 2×RTX 3090 可行性路线：Co-DETR + InternImage-L 主线
 
-> 针对2×RTX 3090 (24GB×2)硬件约束的优化方案
-
----
-
-## 硬件约束分析
-
-**当前配置**：
-- GPU: 2×RTX 3090 (24GB VRAM each)
-- 总显存: 48GB
-- 算力: ~71 TFLOPS (FP16) per card
-
-**可行性评估**：
-- ✓ Swin-B/L: 可行
-- ✓ Co-DETR: 可行（需gradient checkpointing）
-- ⚠️ InternImage-XL: 受限（需优化）
-- ✗ DINO-v2 ViT-g/14 (1.1B): 不可行
+> 更新日期：2026-06-18  
+> 本文是 `docs/FINAL_ROADMAP.md` 的硬件可行性版，专门回答：在 **2×RTX 3090（24GB×2）** 上，如何以 **Co-DETR + InternImage-L** 为主线冲击最高分。
 
 ---
 
-## 调整后的突破路线（2个月）
+## 1. 结论
 
-### 阶段1：基础优化（2周）→ 目标52分
+**Co-DETR + InternImage-L 可以作为当前最高上限主线，但它不是轻量路线。**
 
-**Week 1-2: Swin-B训练优化**
+在 2×3090 上的判断：
 
-```yaml
-# 2×3090可行配置
-model:
-  backbone: swin_base  # 88M参数，~7GB显存
-  
-training:
-  # 显存优化
-  batch_size_per_gpu: 2  # 每卡2张
-  grad_accumulation: 8   # 累积8步 = 等效batch_size 32
-  mixed_precision: true  # FP16
-  gradient_checkpointing: true  # 节省显存
-  
-  # 训练配置
-  epochs: 36
-  input_size: 800
-  lr: 2e-5
-  
-  # 数据并行
-  distributed: true
-  world_size: 2
+| 方案 | 可行性 | 说明 |
+|---|---:|---|
+| Co-DETR + R50 | 高 | 用于 smoke/sanity，不作为最终主线 |
+| Co-DETR + Swin-L | 中 | 可作为 Co-DETR 对照线 |
+| **Co-DETR + InternImage-L** | **中高风险但可冲** | 主冲榜路线，需要强省显存策略 |
+| Co-DETR + InternImage-XL | 极高风险 | 不作为当前主线 |
+| 巨型 ViT / DINOv2 ViT-g | 不可行 | 显存和工程成本过高 |
+
+所以最终策略是：
+
+```text
+先 Co-DETR-R50 sanity
+→ 再 Co-DETR + InternImage-L 低分辨率验证
+→ 再 Co-DETR + InternImage-L 主训练
+→ 最后 train-all + 单模型 TTA/切图/后处理
 ```
 
-**显存占用估算**：
-- Model: 7GB
-- Optimizer states: 14GB
-- Activations: ~2GB (with checkpointing)
-- 总计: ~23GB < 24GB ✓
+---
 
-**训练时间**：
-- 每epoch约45分钟（2000 iters）
-- 36 epochs = 27小时
-- 3-fold = 81小时 = **3.4天**
+## 2. 硬件现实
 
-**预期提升**：+3-4分 (45→49分)
+### 当前机器
+
+```text
+GPU: 2×RTX 3090
+显存: 24GB/card
+总显存: 48GB，但不能当作单卡 48GB 使用
+建议 batch: 1 image/GPU
+```
+
+### 为什么 Co-DETR + InternImage-L 吃紧
+
+显存主要来自：
+
+1. InternImage-L backbone 特征图和 DCNv3/大卷积中间激活。
+2. Co-DETR 多辅助监督、多 head/query 训练路径。
+3. 三模态 RGC side encoder 与 fusion 分支。
+4. 高分辨率输入（800/896 以上会显著放大激活显存）。
+5. AdamW optimizer state。
 
 ---
 
-### 阶段2：架构升级（2周）→ 目标54分
-
-**Week 3-4: Swin-L + 渐进式训练**
+## 3. 必选省显存配置
 
 ```yaml
-# Swin-L优化配置
-model:
-  backbone: swin_large  # 197M参数，~14GB显存
-  
-training:
-  # 显存优化策略
-  batch_size_per_gpu: 1  # 每卡1张（关键）
-  grad_accumulation: 16  # 累积16步
+training_memory_policy:
+  per_gpu_batch_size: 1
+  gradient_accumulation_steps: 16-32
+  amp: true
   gradient_checkpointing: true
-  
-  # 渐进式训练（节省时间）
-  stage_1:  # 低分辨率预热
-    epochs: 12
-    input_size: 640
-    
-  stage_2:  # 提高分辨率
-    epochs: 24
-    input_size: 800
-    load_from: stage_1_best.pth
+  clip_grad_norm: 0.1
+  num_workers: 2-4
+  persistent_workers: false_or_careful
+  optimizer: AdamW
+  optional:
+    deepspeed_zero2: only_if_native_training_oom
+    cpu_optimizer_offload: last_resort_due_to_speed
 ```
 
-**显存占用**：
-- Model: 14GB
-- Optimizer: 28GB → 使用DeepSpeed ZeRO-2优化到18GB
-- Activations: ~3GB
-- 总计: ~20GB < 24GB ✓
+### 分辨率阶梯
 
-**DeepSpeed配置**：
-```json
-{
-  "train_batch_size": 32,
-  "train_micro_batch_size_per_gpu": 1,
-  "gradient_accumulation_steps": 16,
-  "optimizer": {
-    "type": "AdamW",
-    "params": {
-      "lr": 2e-5,
-      "weight_decay": 0.05
-    }
-  },
-  "fp16": {
-    "enabled": true
-  },
-  "zero_optimization": {
-    "stage": 2,
-    "offload_optimizer": {
-      "device": "cpu"
-    }
-  }
-}
+```text
+Stage 0: 640 只验证能跑
+Stage 1: 640/704 低分辨率训练
+Stage 2: 704/768/800 主训练
+Stage 3: 832/896 微调或只用于推理
+Stage 4: tile inference 作为小目标增强
 ```
 
-**训练时间**：
-- Stage 1: 12 epochs × 40 min = 8小时
-- Stage 2: 24 epochs × 60 min = 24小时
-- 3-fold = 96小时 = **4天**
-
-**预期提升**：+3-4分 (49→53分)
+不要一开始就 1024 训练；Co-DETR + InternImage-L 在 3090 上这样做风险很高。
 
 ---
 
-### 阶段3：训练策略优化（1周）→ 目标56分
+## 4. 训练阶段
 
-**Week 5: 数据增强+长训练**
+## Stage 0：Co-DETR-R50 sanity
+
+目标：验证框架、数据、12 类 head、RGC 接口、validation mAP 全链路。
 
 ```yaml
-# 增强配置
+model:
+  detector: Co-DETR
+  backbone: ResNet-50
+  fusion: RGC reliability-gated residual
+input:
+  max_side: 640
+training:
+  epochs: 1-3
+  batch_size_per_gpu: 1
+  amp: true
+  gradient_checkpointing: true
+```
+
+通过标准：
+
+- 不 OOM。
+- loss 正常下降。
+- validation mAP 能落盘。
+- prediction TXT 格式正确。
+
+该阶段通常不提交 leaderboard。
+
+---
+
+## Stage 1：Co-DETR + InternImage-L 低分辨率验证
+
+目标：确认 InternImage-L backbone 权重、Co-DETR head、RGC fusion 三者兼容。
+
+```yaml
+model:
+  detector: Co-DETR
+  backbone: InternImage-L
+  backbone_pretrain: public_offline_pretrained
+  detector_pretrain: public_detection_pretrained_if_compatible
+training:
+  max_side_choices: [640, 704]
+  epochs: 12-18
+  batch_size_per_gpu: 1
+  grad_accumulation: 16
+  lr_backbone: 1e-6_to_5e-6
+  lr_detector: 1e-5_to_2e-5
+  lr_fusion: 2e-5_to_5e-5
+  amp: true
+  gradient_checkpointing: true
+  ema: true
+```
+
+冻结策略：
+
+```text
+Epoch 0-3:
+  冻结低层 backbone，先训 Co-DETR head + RGC fusion + 高层 backbone
+Epoch 4+:
+  解冻全 backbone，小学习率全量训练
+```
+
+通过标准：
+
+- backbone 主体权重加载成功，不允许大量 `patch/stage/layer` missing。
+- local mAP 明显超过 R50 sanity。
+- 预测数量和 score 分布正常。
+
+---
+
+## Stage 2：Co-DETR + InternImage-L 主训练
+
+目标：得到可提交强候选。
+
+```yaml
+training:
+  max_side_choices: [704, 768, 800, 832]
+  epochs: 50-72
+  batch_size_per_gpu: 1
+  grad_accumulation: 16-32
+  amp: true
+  gradient_checkpointing: true
+  ema: true
+  weight_decay: 0.05
+  lr_schedule: warmup_cosine_or_step
 augmentation:
-  # 3090可用的轻量增强
-  mosaic: 
-    prob: 0.5
-    num_images: 4  # 4图拼接（不用9图）
-    
-  mixup:
-    prob: 0.15
-    alpha: 0.5
-    
-  copypaste:
-    prob: 0.3
-    max_objects: 20  # 限制数量
-    
-  # 基础增强
-  random_flip: 0.5
-  color_jitter: 0.5
-  blur: 0.2
-
-training:
-  epochs: 50  # 延长训练
-  early_stopping: 
-    patience: 10
-    monitor: val_map
+  horizontal_flip: 0.5
+  multiscale_resize: true
+  mild_color_jitter: true
+  mild_blur_noise: true
+  depth_valid_mask: true
+  conservative_depth_dropout: true
 ```
 
-**训练时间**：
-- 50 epochs × 70 min = 58小时
-- 3-fold = 174小时 = **7.2天**
+注意：
 
-**预期提升**：+2-3分 (53→56分)
+- 所有几何增强必须 RGB/IR/Depth 同步。
+- Mosaic/Copy-Paste/MixUp 不能默认强上；必须先在 validation 上证明。
+- 每个 epoch 或固定间隔生成 validation mAP。
 
 ---
 
-### 阶段4：模型融合优化（1周）→ 目标58分
+## Stage 3：高分辨率微调
 
-**Week 6: 知识蒸馏**
+目标：提升高 IoU AP 和小目标召回。
 
 ```yaml
-# 蒸馏配置（3090可行）
-distillation:
-  # 教师：Swin-L最佳模型
-  teacher:
-    backbone: swin_large
-    checkpoint: best_swin_l_fold0.pth
-    frozen: true
-    
-  # 学生：Swin-B
-  student:
-    backbone: swin_base
-    
-  # 蒸馏策略
-  feature_distillation:
-    layers: [stage2, stage3, stage4]
-    loss_weight: 0.5
-    
-  logit_distillation:
-    temperature: 4.0
-    loss_weight: 0.7
-    
-training:
-  epochs: 30
-  batch_size_per_gpu: 2  # 学生模型小，可增加batch
+finetune:
+  init_from: best_stage2_checkpoint
+  max_side_choices: [832, 896]
+  epochs: 12-24
+  lr: 1e-6_to_5e-6
+  batch_size_per_gpu: 1
+  grad_accumulation: 16-32
+  amp: true
+  gradient_checkpointing: true
+  ema: true
 ```
 
-**显存占用**：
-- Teacher (frozen): 14GB
-- Student (trainable): 7GB
-- 总计: ~21GB < 24GB ✓
-
-**训练时间**：
-- 30 epochs × 50 min = 25小时
-- 3-fold = 75小时 = **3.1天**
-
-**预期提升**：+1-2分 (56→58分)
+如果 896 训练显存不稳定，则只在推理阶段使用 896/960 或 tile inference。
 
 ---
 
-### 阶段5：半监督学习（2周）→ 目标60分
+## Stage 4：多 fold 验证与 train-all
 
-**Week 7-8: 测试集伪标签**
+目标：避免单 fold 偶然性。
 
-```yaml
-# 半监督流程
-semi_supervised:
-  # Round 1: 训练集训练强模型
-  round_1:
-    model: swin_large
-    dataset: train_only
-    epochs: 50
-    
-  # Round 2: 测试集生成伪标签
-  round_2:
-    inference:
-      # 多模型ensemble生成高质量伪标签
-      models:
-        - swin_l_fold0
-        - swin_l_fold1
-        - swin_l_fold2
-      fusion: wbf
-      confidence_threshold: 0.95  # 高置信度过滤
-      
-  # Round 3: 联合训练
-  round_3:
-    dataset: train + pseudo_test
-    pseudo_loss_weight: 0.5
-    epochs: 30
+流程：
+
+1. fold0 作为历史基准对齐 R50 baseline。
+2. 修正或新建 balanced grouped split。
+3. Co-DETR + InternImage-L 至少验证 2 个 fold，理想 3 个 fold。
+4. 固定最佳 recipe 后，用全部 2000 张训练图训练 final single model。
+
+禁止：
+
+- 不使用测试集伪标签训练。
+- 不使用外部训练数据。
+- 不用多模型投票/平均作为最终路径。
+
+---
+
+## Stage 5：单模型推理增强
+
+允许并推荐验证：
+
+1. class-wise threshold 搜索。
+2. class-wise NMS / Soft-NMS。
+3. 单模型多尺度 TTA。
+4. 单模型 flip TTA。
+5. full image + tile inference，再做 class-wise NMS。
+
+禁止：
+
+- 朴素平均 TTA。
+- 弱 fold 融合。
+- 简单多模型 voting/averaging ensemble。
+- 没有 validation 证明的后处理直接提交。
+
+---
+
+## 5. 时间与资源估计
+
+| 阶段 | 预计时间 | 风险 |
+|---|---:|---|
+| Stage 0 Co-DETR-R50 sanity | 1-3 天 | 低 |
+| Stage 1 InternImage-L 低分辨率 | 3-7 天 | 中高 |
+| Stage 2 主训练 | 1-3 周 | 高 |
+| Stage 3 高分辨率微调 | 1-2 周 | 高 |
+| Stage 4 多 fold / train-all | 1-3 周 | 高 |
+| Stage 5 推理增强 | 3-7 天 | 中 |
+
+总周期：6-10 周。训练时间很长，但符合“最高上限优先”的目标。
+
+---
+
+## 6. 提交门禁
+
+任何候选提交前必须具备：
+
+```text
+1. 完整 1000 test TXT
+2. zip 根目录结构正确
+3. checkpoint path + sha256
+4. config path
+5. git commit
+6. split manifest
+7. local validation mAP
+8. prediction count / score distribution analysis
+9. promotion reason
+10. dry-run 成功
 ```
 
-**训练时间**：
-- Round 1: 7.2天（已在阶段3完成）
-- Round 2: 推理3小时
-- Round 3: 30 epochs × 80 min = 40小时
-- 3-fold = 120小时 = **5天**
-
-**预期提升**：+1-2分 (58→60分)
+没有以上证据，不进入 `outputs/submissions/` 自动监控目录。
 
 ---
 
-### 阶段6：后处理优化（1周）→ 目标61分
+## 7. 回退策略
 
-**Week 9: WBF + TTA**
+如果 Co-DETR + InternImage-L 卡住：
 
-```yaml
-# 后处理配置
-postprocess:
-  # WBF融合
-  wbf:
-    models:
-      - swin_l_fold0: weight=1.2
-      - swin_l_fold1: weight=1.0
-      - swin_l_fold2: weight=1.0
-      - swin_b_distilled_fold0: weight=0.8
-      - swin_b_distilled_fold1: weight=0.8
-      - swin_b_distilled_fold2: weight=0.8
-    iou_threshold: 0.5
-    
-  # TTA（轻量版）
-  tta:
-    augmentations:
-      - scale=1.0, flip=false
-      - scale=0.9, flip=false
-      - scale=1.1, flip=false
-      - scale=1.0, flip=true
-    fusion: wbf
+1. 回退到 Co-DETR + Swin-L，确认 detector-family 是否带来收益。
+2. 回退到 RGC-DINO + InternImage-L，确认 backbone 是否带来收益。
+3. 回退到正确初始化的 RGC-DINO + Swin-L，作为强基线。
+
+不要回退到已失败路线：低阈值盲调、朴素 TTA 平均、弱 fold 融合、测试集伪标签训练。
+
+---
+
+## 8. 最终判断
+
+**Co-DETR + InternImage-L 是当前 2×3090 条件下最高上限但仍可落地的主线。**
+
+它比 Swin-L 更难、更慢、更吃显存，但如果目标是最高分，它值得作为主方案。执行时必须坚持：
+
+```text
+小模型 sanity
+→ 大模型低分辨率验证
+→ 长训主模型
+→ 多 fold 证明
+→ train-all final
+→ 单模型 TTA/切图
+→ 严格提交门禁
 ```
-
-**推理时间**：
-- 单模型单尺度: 5分钟
-- 6模型 × 4TTA = 24次推理
-- 总时间: ~2小时
-
-**预期提升**：+0.5-1分 (60→61分)
-
----
-
-### 阶段7：极限优化（1周）→ 目标62分
-
-**Week 10: Model Soup + 超参搜索**
-
-```yaml
-# Model Soup
-model_soup:
-  # 收集多个checkpoint
-  checkpoints:
-    - swin_l_fold0_ep48.pth
-    - swin_l_fold0_ep49.pth
-    - swin_l_fold0_ep50.pth
-  
-  # 贪心选择最优组合
-  averaging: greedy_soup
-  
-# 超参搜索（轻量版）
-hyperparameter_search:
-  method: optuna
-  n_trials: 20  # 限制试验次数
-  
-  # 只搜索后处理参数
-  search_space:
-    wbf_iou_threshold: [0.4, 0.6]
-    confidence_threshold: [0.001, 0.05]
-    nms_threshold: [0.5, 0.7]
-```
-
-**时间**：1周
-
-**预期提升**：+0.5-1分 (61→62分)
-
----
-
-## 完整时间线（2个月）
-
-| 阶段 | 周数 | 任务 | GPU时间 | 预期分数 |
-|------|------|------|---------|---------|
-| 当前 | - | Baseline | - | 45-47 |
-| 阶段1 | 1-2 | Swin-B优化 | 3.4天 | 49 |
-| 阶段2 | 3-4 | Swin-L升级 | 4天 | 53 |
-| 阶段3 | 5 | 数据增强+长训练 | 7.2天 | 56 |
-| 阶段4 | 6 | 知识蒸馏 | 3.1天 | 58 |
-| 阶段5 | 7-8 | 半监督学习 | 5天 | 60 |
-| 阶段6 | 9 | WBF+TTA | 0.1天 | 61 |
-| 阶段7 | 10 | 极限优化 | 0.5天 | 62 |
-
-**总GPU时间**：约23天（含buffer）
-**总日历时间**：10周 = 2.5个月（留有余量）
-
----
-
-## 显存优化技巧汇总
-
-### 1. Gradient Checkpointing
-```python
-# 启用梯度检查点
-model.backbone.use_checkpoint = True
-# 节省：40-50% activation显存
-# 代价：15-20% 训练速度下降
-```
-
-### 2. DeepSpeed ZeRO-2
-```python
-# 优化器状态分片
-from deepspeed import initialize
-
-model_engine, optimizer, _, _ = initialize(
-    model=model,
-    config='ds_config.json'
-)
-# 节省：~30% 优化器显存
-```
-
-### 3. Mixed Precision Training
-```python
-from torch.cuda.amp import autocast, GradScaler
-
-scaler = GradScaler()
-
-with autocast():
-    outputs = model(inputs)
-    loss = criterion(outputs, targets)
-    
-scaler.scale(loss).backward()
-# 节省：~40% 总显存
-```
-
-### 4. Gradient Accumulation
-```python
-# 小batch size + 累积梯度
-optimizer.zero_grad()
-for i, (inputs, targets) in enumerate(dataloader):
-    outputs = model(inputs)
-    loss = criterion(outputs, targets) / accumulation_steps
-    loss.backward()
-    
-    if (i + 1) % accumulation_steps == 0:
-        optimizer.step()
-        optimizer.zero_grad()
-# 效果：等效大batch size，显存友好
-```
-
----
-
-## 无法实现的方案（标注）
-
-### ✗ InternImage-XL (335M参数)
-- **问题**：单卡需要>30GB显存
-- **替代**：Swin-L (197M) 性能接近
-- **损失**：约1-2分
-
-### ✗ Co-DETR完整版
-- **问题**：双decoder需要额外8GB显存
-- **替代**：单decoder + 更长训练
-- **损失**：约1分
-
-### ✗ DINO-v2 ViT-g/14 (1.1B)
-- **问题**：需要>80GB显存
-- **替代**：冻结DINO-v2 ViT-B作为特征提取器
-- **损失**：约2分
-
----
-
-## 资源消耗估算
-
-### 电力成本
-- 2×RTX 3090功耗: ~700W
-- 训练23天 × 24h = 552小时
-- 用电: 552h × 0.7kW = 386kWh
-- 电费: ~$50-100（按地区）
-
-### 时间成本
-- 训练时间: 23 GPU-days
-- 人工时间: ~40小时（配置+监控+调试）
-- 总日历时间: 10周
-
----
-
-## 风险控制
-
-### 技术风险
-
-| 风险 | 概率 | 缓解措施 |
-|------|------|---------|
-| OOM (显存不足) | 中 | Gradient checkpointing, 减小batch size |
-| 训练不稳定 | 低 | 梯度裁剪, 更小学习率 |
-| 过拟合 | 中 | Early stopping, 数据增强 |
-
-### 时间风险
-- 每阶段预留20% buffer
-- 关键路径：Swin-L训练
-- 并行策略：推理与训练同步
-
----
-
-## 实施清单
-
-### 软件依赖
-```bash
-# 核心依赖
-pip install torch==2.0.1+cu118 torchvision
-pip install deepspeed==0.9.5
-pip install optuna
-pip install ensemble-boxes  # WBF
-
-# 下载预训练权重
-wget https://github.com/microsoft/Swin-Transformer/releases/download/v1.0.0/swin_base_patch4_window7_224_22k.pth
-wget https://github.com/microsoft/Swin-Transformer/releases/download/v1.0.0/swin_large_patch4_window7_224_22k.pth
-```
-
-### 硬件检查
-```bash
-# 检查显存
-nvidia-smi
-
-# 测试DeepSpeed
-ds_report
-
-# 监控温度
-watch -n 1 nvidia-smi
-```
-
----
-
-## 预期成果
-
-### 保守估计
-- 目标: 58-60分
-- 概率: 80%
-- 排名: 前3-5名
-
-### 乐观估计
-- 目标: 60-62分
-- 概率: 50%
-- 排名: 榜首或超越
-
-### 关键因素
-1. Swin-L训练质量（最重要）
-2. 半监督学习效果
-3. WBF融合策略
-
----
-
-## 立即行动
-
-### 本周任务（Week 1）
-1. 安装DeepSpeed和依赖
-2. 下载Swin-B预训练权重
-3. 配置分布式训练
-4. 启动Swin-B fold0训练
-5. 监控显存和速度
-
-### 命令示例
-```bash
-# 启动Swin-B训练（2卡）
-python -m torch.distributed.launch \
-  --nproc_per_node=2 \
-  scripts/train_rgc_dino.py \
-  --config configs/swin_b_stage1.yaml \
-  --fold 0
-
-# 监控
-tensorboard --logdir outputs/swin_b_fold0/
-```
-
----
-
-## 总结
-
-**可行性**：✓ 完全可行
-- 所有方案都在2×3090的显存限制内
-- 训练时间约23天，符合2个月预算
-- 预期达到60±2分
-
-**核心策略**：
-- 用Swin-L替代InternImage-XL（性能接近，显存友好）
-- 用DeepSpeed优化显存
-- 用Gradient Checkpointing换时间
-- 重点投入：数据增强、半监督、蒸馏
-
-**开始行动**：
-立即启动阶段1的Swin-B训练，验证显存和速度符合预期。

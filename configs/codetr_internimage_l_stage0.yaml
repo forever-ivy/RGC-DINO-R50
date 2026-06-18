@@ -1,0 +1,87 @@
+# Co-DETR + InternImage-L Stage 0/1 planning config
+#
+# This file records the intended high-ceiling route.  It is not consumed by the
+# current RGC-DINO trainer yet; implementation should first add a Co-DETR entry
+# point and a matching RGC fusion adapter.
+
+project:
+  name: rgc-codetr-internimage-l
+  objective: highest_score_single_model
+  hardware: 2x_rtx3090_24gb
+
+constraints:
+  no_external_training_data: true
+  offline_pipeline: true
+  no_test_pseudo_label_training: true
+  no_simple_voting_or_averaging_ensemble: true
+  submit_complete_test_zip_only: true
+
+model:
+  detector: codetr
+  backbone: internimage_l
+  fusion: reliability_gated_residual_rgb_ir_depth
+  num_classes: 12
+  rgb_primary_path: true
+  auxiliary_modalities:
+    - infrared
+    - depth
+
+integration:
+  codetr_root: external/Co-DETR
+  internimage_weight_path: /data1/liuxuan/checkpoints/internimage/internimage_l_public_pretrain.pth
+  codetr_weight_path: /data1/liuxuan/checkpoints/codetr/codetr_internimage_l_public_pretrain.pth
+  require_weight_load_report: true
+  fail_on_backbone_missing_key_patterns:
+    - patch_embed
+    - levels
+    - layers
+    - stages
+  allow_mismatched_class_heads: true
+
+memory_policy:
+  per_gpu_batch_size: 1
+  gradient_accumulation_steps: 16
+  amp: true
+  gradient_checkpointing: true
+  optional_deepspeed_zero2: true
+  clip_grad_norm: 0.1
+
+stage0_sanity:
+  detector: codetr
+  backbone: resnet50
+  image_max_side: 640
+  epochs: 1
+  purpose: verify_data_loss_eval_txt_pipeline
+
+stage1_internimage_lowres:
+  image_max_sides: [640, 704]
+  epochs: 12
+  freeze_low_backbone_epochs: 3
+  lr_backbone: 0.000005
+  lr_detector: 0.00002
+  lr_fusion: 0.00005
+  ema: true
+
+stage2_main_train:
+  image_max_sides: [704, 768, 800, 832]
+  epochs: 72
+  gradient_accumulation_steps: 16
+  ema: true
+
+stage3_highres_finetune:
+  image_max_sides: [832, 896]
+  epochs: 24
+  lr: 0.000005
+  gradient_accumulation_steps: 32
+
+validation_gate:
+  require_map_50_95: true
+  require_ap50: true
+  require_prediction_distribution_report: true
+  require_checkpoint_manifest: true
+
+submission_gate:
+  require_1000_test_txt: true
+  require_manifest: true
+  require_promotion_reason: true
+  require_dry_run: true
