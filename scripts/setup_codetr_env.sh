@@ -25,7 +25,8 @@ fi
 . "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate "$ENV_PREFIX"
 
-python -m pip install --upgrade pip setuptools wheel
+python -m pip install --upgrade pip
+python -m pip install 'setuptools==60.2.0' wheel
 
 # Co-DETR is based on MMDetection 2.x / MMCV 1.x.  Use an isolated, older
 # OpenMMLab stack instead of polluting the main PyTorch 2.12 RGC-DINO env.
@@ -37,13 +38,17 @@ python -m pip install \
   --extra-index-url https://download.pytorch.org/whl/cu117
 
 python -m pip install openmim
-mim install "mmcv-full==1.7.1"
+mim install "mmcv-full==1.7.0"
 
+# Keep legacy OpenMMLab dependencies on versions compatible with torch 1.13 / MMCV 1.x.
 python -m pip install \
-  matplotlib numpy pycocotools six terminaltables fairscale scipy yapf timm fvcore tensorboard einops
+  'numpy<2' \
+  'opencv-python<4.9' \
+  'yapf==0.32.0' \
+  'rich==13.4.2' \
+  matplotlib pycocotools six terminaltables fairscale scipy timm fvcore tensorboard einops
 
-# Install the local Co-DETR/mmdet package in editable mode without fetching
-# unrelated external code.
-MMCV_WITH_OPS=1 python -m pip install -v -e /data1/liuxuan/projects/RGC-DINO-R50/external/Co-DETR
-
-python /data1/liuxuan/projects/RGC-DINO-R50/scripts/check_codetr_environment.py
+# Co-DETR's local mmdet package can be imported through PYTHONPATH=external/Co-DETR;
+# avoid editable install/build isolation, which may try to rebuild or fetch deps.
+PYTHONPATH=/data1/liuxuan/projects/RGC-DINO-R50/external/Co-DETR:${PYTHONPATH:-} \
+  python /data1/liuxuan/projects/RGC-DINO-R50/scripts/check_codetr_environment.py

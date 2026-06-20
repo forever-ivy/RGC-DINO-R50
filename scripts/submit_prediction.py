@@ -190,14 +190,24 @@ def find_final_submit_button(driver: webdriver.Chrome, wait_time: int):
 
 
 def classify_submission_page(page_text: str) -> tuple[str, str, bool]:
-    """Classify post-submit page text into a submission status."""
+    """Classify post-submit page text into a submission status.
+
+    The platform often closes the modal without an immediate visible success toast.
+    Avoid treating generic words like ``成功`` or upload-only success messages as a
+    confirmed leaderboard submission; only explicit final-submit state counts as
+    confirmed.  A click with no explicit state is still logged for later
+    leaderboard verification.
+    """
     lowered = page_text.lower()
-    success_texts = ['成功', 'success', '提交成功', 'uploaded', '保存成功']
+    normalized = normalize_text(page_text)
     error_texts = ['失败', '错误', '请选择', '不能为空', '上传失败']
+    confirmed_texts = ['提交成功', '保存成功', '已提交', 'successfullysubmitted']
     if any(text in lowered for text in error_texts):
         return STATUS_UPLOAD_VALIDATION_FAILED, 'Submit clicked, but page shows an error or validation message', False
-    if any(text in lowered for text in success_texts):
-        return STATUS_SUBMIT_CONFIRMED, 'Submission successful', True
+    if any(text in normalized or text in lowered for text in confirmed_texts):
+        return STATUS_SUBMIT_CONFIRMED, 'Submission confirmed by visible page state', True
+    if '未提交' in normalized:
+        return STATUS_SUBMIT_CLICKED_UNCONFIRMED, 'Submit clicked, but visible page state still shows 未提交', False
     return STATUS_SUBMIT_CLICKED_UNCONFIRMED, 'Submit button clicked; no explicit success confirmation found', False
 
 
@@ -254,9 +264,11 @@ def submit_prediction(
             driver.execute_script("arguments[0].click();", submit_button)
             time.sleep(8)
 
-            status, message, confirmed = classify_submission_page(driver.page_source)
+            visible_text = driver.find_element(By.TAG_NAME, 'body').text
+            status, message, confirmed = classify_submission_page(visible_text)
             result['status'] = status
             result['message'] = message
+            result['page_text_excerpt'] = visible_text[:1000]
             result['success'] = confirmed or (accept_unconfirmed and status == STATUS_SUBMIT_CLICKED_UNCONFIRMED)
             if confirmed:
                 print("✓ Submission successful!")

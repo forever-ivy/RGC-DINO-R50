@@ -99,7 +99,16 @@ class MonitorCompetitionTest(unittest.TestCase):
             manifest.write_text("{}", encoding="utf-8")
             sha = module.file_sha256(zip_path)
             zip_path.with_suffix(".promotion.json").write_text(
-                json.dumps({"zip_sha256": sha, "manifest_path": str(manifest), "ready_for_submit": True}),
+                json.dumps(
+                    {
+                        "zip_sha256": sha,
+                        "manifest_path": str(manifest),
+                        "ready_for_submit": True,
+                        "reason": "unit test candidate",
+                        "local_map": 0.1,
+                        "leaderboard_baseline": 0.0,
+                    }
+                ),
                 encoding="utf-8",
             )
             monitor = module.CompetitionMonitor(output_dir=root / "monitor")
@@ -119,7 +128,16 @@ class MonitorCompetitionTest(unittest.TestCase):
             manifest.write_text("{}", encoding="utf-8")
             sha = module.file_sha256(zip_path)
             zip_path.with_suffix(".promotion.json").write_text(
-                json.dumps({"zip_sha256": sha, "manifest_path": str(manifest), "ready_for_submit": True}),
+                json.dumps(
+                    {
+                        "zip_sha256": sha,
+                        "manifest_path": str(manifest),
+                        "ready_for_submit": True,
+                        "reason": "unit test candidate",
+                        "local_map": 0.1,
+                        "leaderboard_baseline": 0.0,
+                    }
+                ),
                 encoding="utf-8",
             )
             monitor = module.CompetitionMonitor(output_dir=root / "monitor")

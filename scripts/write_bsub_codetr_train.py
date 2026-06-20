@@ -58,14 +58,15 @@ def render_bsub_script(
 ) -> str:
     require_flag = " --require-weights" if require_weights else ""
     cfg_options = f"--cfg-options data.workers_per_gpu={num_workers}"
+    train_env = f"PYTHONPATH={codetr_root}:${{PYTHONPATH:-}}"
     if gpu <= 1:
         train_cmd = (
-            f"PYTHONPATH={codetr_root}:$PYTHONPATH python {codetr_root}/tools/train.py "
+            f"{train_env} python {codetr_root}/tools/train.py "
             f"{config} --work-dir {work_dir} {cfg_options}"
         )
     else:
         train_cmd = (
-            f"PYTHONPATH={codetr_root}:$PYTHONPATH bash {codetr_root}/tools/dist_train.sh "
+            f"{train_env} bash {codetr_root}/tools/dist_train.sh "
             f"{config} {gpu} {work_dir} {cfg_options}"
         )
     return f"""#!/bin/sh

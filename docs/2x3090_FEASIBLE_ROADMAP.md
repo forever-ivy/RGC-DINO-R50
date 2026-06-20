@@ -1,13 +1,15 @@
 # 2×RTX 3090 可行性路线：Co-DETR + InternImage-L 主线
 
-> 更新日期：2026-06-18  
-> 本文是 `docs/FINAL_ROADMAP.md` 的硬件可行性版，专门回答：在 **2×RTX 3090（24GB×2）** 上，如何以 **Co-DETR + InternImage-L** 为主线冲击最高分。
+> 更新日期：2026-06-20
+> 本文是 `docs/FINAL_ROADMAP.md` 的硬件可行性版，专门回答：在 **2×RTX 3090（24GB×2）** 上，如何坚持已线上验证的 **Co-DETR + InternImage-L continuation** 主线冲击更高分。当前 best：epoch20，strict mAP 0.413322，leaderboard 48.335。
 
 ---
 
 ## 1. 结论
 
-**Co-DETR + InternImage-L 可以作为当前最高上限主线，但它不是轻量路线。**
+**Co-DETR + InternImage-L continuation 已经是当前线上最高分主线。**
+
+它不是轻量路线，但已在 2×3090 上跑通并把线上分从 RGC-DINO baseline 45.044 提升到 48.335。后续继续沿这条路线做 checkpoint selection、长训、train-all、高分辨率/单模型后处理，以及再迁移 IR/Depth RGC fusion。
 
 在 2×3090 上的判断：
 
@@ -22,10 +24,10 @@
 所以最终策略是：
 
 ```text
-先 Co-DETR-R50 sanity
-→ 再 Co-DETR + InternImage-L 低分辨率验证
-→ 再 Co-DETR + InternImage-L 主训练
-→ 最后 train-all + 单模型 TTA/切图/后处理
+保留当前 Co-DETR + InternImage-L continue epoch20 best checkpoint
+→ 后续 continuation/longer train 必须 strict mAP > 0.413322 才提交
+→ 再做 train-all + 单模型 TTA/切图/后处理
+→ 最后在 Co-DETR InternImage-L 主线上迁移 IR/Depth RGC fusion
 ```
 
 ---

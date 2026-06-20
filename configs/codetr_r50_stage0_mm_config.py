@@ -28,10 +28,9 @@ classes = (
     'tricycle',
 )
 
-# Keep the base Co-DETR auxiliary heads intact for the first training smoke.
-# Only the query head is changed to 12 classes so the DETR path matches this
-# competition.  Full 12-class aux-head surgery comes after the training loop is
-# proven in the local environment.
+# Override the query and auxiliary heads to the competition's 12 classes.  MMCV
+# list merging replaces whole list entries, so roi_head/bbox_head are copied from
+# the Co-DETR base config with only num_classes adjusted.
 model = dict(
     backbone=dict(init_cfg=None),
     query_head=dict(num_classes=num_classes),

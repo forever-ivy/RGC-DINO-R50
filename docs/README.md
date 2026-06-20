@@ -1,7 +1,7 @@
 # RGC-DINO 项目文档导航
 
 > 面向城市场景视觉多模态目标检测竞赛  
-> 当前状态：R50 baseline 45.044 分；主冲榜路线已调整为 **Co-DETR + InternImage-L + RGC 三模态融合**。
+> 当前状态：线上最佳已从 RGC-DINO-R50 baseline 45.044 提升到 **Co-DETR + InternImage-L continue epoch20 的 48.335**；后续主冲榜路线明确切换为 **Co-DETR InternImage-L continuation**，RGC 三模态迁移作为下一阶段提分方向。
 
 ---
 
@@ -10,10 +10,10 @@
 **主线文档**：[FINAL_ROADMAP.md](FINAL_ROADMAP.md)
 
 - 硬件：2×RTX 3090（24GB×2）
-- 主模型：Co-DETR + InternImage-L
-- 融合：RGB 主干 + IR/Depth reliability-gated residual fusion
-- 目标：在合法、可验证、可复现的前提下冲击最高分
-- 原则：不怕训练时间长，但不能再盲目提交或走已失败的融合路线
+- 当前线上最佳：Co-DETR + InternImage-L continue epoch20，**48.335**
+- 当前主线：先坚持已验证的 RGB-only Co-DETR InternImage-L continuation/checkpoint-selection 路线
+- 下一阶段提分：在 Co-DETR InternImage-L 主线稳定后，再迁移 IR/Depth reliability-gated residual fusion
+- 原则：强单模型优先，strict final-TXT validation 过门禁后才提交
 
 **硬件可行性说明**：[2x3090_FEASIBLE_ROADMAP.md](2x3090_FEASIBLE_ROADMAP.md)
 
@@ -77,12 +77,12 @@
 
 | 阶段 | 状态 | 分数/目标 | 备注 |
 |---|---|---:|---|
-| RGC-DINO-R50 baseline | 已完成 | 45.044 | fold0 单模型历史最好 |
+| RGC-DINO-R50 baseline | 已完成/退为 fallback | 45.044 | 老基线，已被新主线超过 |
 | 低阈值调优 | 失败 | 43.955 | 低阈值/密集框高风险 |
 | 朴素 TTA 平均 | 失败 | 34.872 | 已归档为禁止路线 |
 | 2-fold 融合 | 失败 | 44.263 | 弱 fold 拖累强模型 |
-| Swin-L 尝试 | 需复盘 | 不作为上限判断 | 疑似权重/评估闭环问题 |
-| **Co-DETR + InternImage-L** | **主线规划中** | 冲击最高分 | 先 sanity，再低分辨率，再长训 |
+| Swin-L 尝试 | 退为对照/复盘 | 不作为上限判断 | 疑似权重/评估闭环问题 |
+| **Co-DETR + InternImage-L continue epoch20** | **当前主线/线上最佳** | **48.335** | strict final-TXT mAP 0.413322，后续只提交超过此门槛的候选 |
 
 ---
 
@@ -90,18 +90,18 @@
 
 ### 已验证经验
 
-1. RGC 三模态融合是项目核心资产，后续 Co-DETR 路线仍应保留 RGB/IR/Depth reliability-gated fusion 思路。
-2. R50 baseline 已能建立可提交闭环，但 backbone/detector 上限不足。
+1. Co-DETR + InternImage-L continuation 已在线上验证超过老 RGC-DINO baseline：48.335 vs 45.044，正式作为当前主线。
+2. 当前已上线高分仍是 RGB-only Co-DETR；IR/Depth/RGC 三模态融合是下一阶段提分方向，不再先退回旧 RGC-DINO 主线。
 3. 错误融合比不融合更糟；不能把多模型/多尺度输出简单平均。
 
 ### 当前主线原则
 
 ```text
 强单模型优先
-→ Co-DETR + InternImage-L 主线
-→ 多 fold 验证 recipe
-→ train-all final single model
-→ 合法单模型 TTA / tile inference
+→ Co-DETR + InternImage-L continuation 作为当前主线
+→ checkpoint/strict final-TXT sweep 选择 best epoch（当前 epoch20）
+→ 只提交 local strict mAP 超过 0.413322、线上基线超过 48.335 的候选
+→ 再推进更长训练 / train-all / 单模型 TTA或tile / IR-Depth RGC fusion 迁移
 → 严格 promotion 后提交
 ```
 

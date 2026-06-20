@@ -1,7 +1,8 @@
 # Co-DETR + InternImage-L 高上限冲榜路线（2×RTX 3090）
 
-> 更新日期：2026-06-18  
-> 目标：在竞赛规则内，以最高上限为优先，改用 **Co-DETR + InternImage-L** 作为主冲榜路线；Swin-L 仅保留为强基线/对照线。  
+> 更新日期：2026-06-20
+> 当前线上最佳：**Co-DETR + InternImage-L continue epoch20，48.335**（strict final-TXT fold0 val mAP 0.413322）。
+> 目标：在竞赛规则内，坚持已线上验证的 **Co-DETR InternImage-L continuation** 作为当前主冲榜路线；RGC-DINO/R50/Swin-L 退为历史基线或对照线，IR/Depth reliability-gated fusion 作为下一阶段迁移提分方向。
 > 硬件：2×RTX 3090（24GB×2）。不怕训练时间长，但必须有显存策略、验证门禁和提交纪律。
 
 ---
@@ -27,7 +28,9 @@
 
 | 项目 | 状态 |
 |---|---|
-| R50 baseline | fold0 单模型线上最好约 45.044 |
+| RGC-DINO-R50 baseline | fold0 单模型线上 45.044；已被 Co-DETR continue 超过，退为 fallback |
+| Co-DETR + InternImage-L first 12ep | epoch11 raw/strict local 约 0.325/0.324，线上 42.101；说明短训不足 |
+| Co-DETR + InternImage-L continue | epoch20 strict final-TXT local 0.413322，线上 **48.335**；当前主线 |
 | 低阈值调优 | 已失败，线上约 43.955 |
 | 朴素 TTA 平均 | 灾难性失败，约 34.872 |
 | 2-fold 融合 | 弱模型拖累，约 44.263 |
@@ -35,9 +38,10 @@
 
 ### 结论
 
-- **Swin-L 不再作为最终主线**：它是重要对照线，用来确认训练/验证/提交闭环是否正常。
-- **主冲榜路线改为 Co-DETR + InternImage-L**：上限更高，但显存和工程风险显著更大。
-- **不要从一开始就直接长训最大配置**：先通过最小 smoke、R50 sanity、Swin-L/InternImage-L 单模型验证逐级放大，避免几天训练后才发现权重或数据流错误。
+- **当前主线已经确定为 Co-DETR + InternImage-L continuation**：epoch20 已线上确认 48.335，高于老 RGC-DINO 45.044。
+- **Swin-L/RGC-DINO/R50 不再作为主冲榜路线**：只保留为历史基线、故障回退或对照，不再默认占用磁盘保存大量 checkpoint。
+- **当前 best checkpoint 优先级最高**：`outputs/codetr/internimage_l_stage1_continue_ep24_fold0_20260620_0237/best_bbox_mAP_epoch_20.pth` 必须保留；后续候选必须 strict final-TXT mAP > 0.413322 且以 48.335 为线上基线。
+- **三模态 RGC 融合迁移是下一阶段提分，不是回退旧路线**：先在已验证的 Co-DETR InternImage-L 主线上继续 checkpoint selection、长训、train-all，再迁移 IR/Depth reliability-gated fusion。
 
 ---
 
@@ -340,10 +344,10 @@ finetune:
 | 里程碑 | 目标 |
 |---|---|
 | Co-DETR-R50 sanity | 证明链路正确，不追求分数 |
-| Co-DETR + InternImage-L 低分辨率 | 超过 R50 baseline local mAP |
-| 主训练 best fold | 明显超过 Swin-L/R50 对照线 |
-| 多 fold recipe | 不依赖单 fold 偶然性 |
-| final train-all + TTA/tile | 冲击最终 leaderboard 高分 |
+| Co-DETR + InternImage-L continue epoch20 | 已达成：strict mAP 0.413322，线上 48.335 |
+| 后续 continuation / longer train | 必须 strict final-TXT mAP > 0.413322 才允许提交 |
+| train-all / high-res / TTA / tile | 必须以线上 48.335 为 baseline，先 validation 证明再提交 |
+| IR/Depth RGC fusion 迁移 | 必须在 Co-DETR InternImage-L 主线上验证，不能回退旧 RGC-DINO 体系盲训 |
 
 ### 提交门槛
 
@@ -352,9 +356,11 @@ finetune:
 ```text
 完整 test ZIP
 + manifest/hash/config/checkpoint/git commit
-+ validation mAP 证据
++ strict final-TXT validation mAP 证据
++ Co-DETR InternImage-L 候选必须 strict mAP > 0.413322
++ promotion metadata 的 leaderboard_baseline 必须 >= 48.335
 + 预测数量/score 分布正常
-+ dry-run 成功
++ dry-run/leaderboard 确认链路正常
 + promotion reason 清晰
 ```
 
@@ -388,15 +394,16 @@ finetune:
 
 ## 9. 最终结论
 
-本项目主线正式调整为：
+本项目当前主线正式调整为：
 
 ```text
-Co-DETR + InternImage-L + RGC RGB/IR/Depth reliability-gated fusion
-→ 多阶段省显存训练
-→ 多 fold 验证
-→ train-all final single model
+Co-DETR + InternImage-L continuation（当前已验证 epoch20）
+→ strict final-TXT sweep 选择 best checkpoint
+→ 以 48.335 / strict mAP 0.413322 作为新提交门槛
+→ 更长训练、高分辨率微调、train-all final single model
 → 合法单模型 TTA / tile inference / class-wise NMS
+→ 在 Co-DETR InternImage-L 主线上迁移 RGB/IR/Depth reliability-gated fusion
 → 严格 promotion 后提交
 ```
 
-这是比 Swin-L 更高上限的路线，但它不是“直接一键训练”的路线。必须先通过权重加载、Co-DETR sanity、低分辨率 InternImage-L 验证，再进入长训。这样既追求最高分，又避免重复踩 TTA、弱融合、无验证提交的坑。
+当前线上已验证最优是 `best_bbox_mAP_epoch_20.pth`，分数 48.335。旧 RGC-DINO/Swin/R50 路线不再作为主冲榜路线；其 checkpoint 可以清理以节省空间，只保留文档、日志、ranking、提交 ZIP/manifest 等复现实验证据。

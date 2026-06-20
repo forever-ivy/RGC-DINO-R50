@@ -58,6 +58,13 @@ class CompetitionMonitor:
 
         self.state_file = output_dir / 'monitor_state.json'
         self.state = self.load_state()
+        self.min_local_map_by_kind = {
+            # Current best verified Co-DETR candidate: 48.335 leaderboard score
+            # from strict final-TXT fold0 val mAP 0.4133222840328082.
+            'codetr_internimage_l': 0.4133222840328082,
+            'codetr_internimage_l_continue': 0.4133222840328082,
+            'codetr_internimage_l_fasttrack': 0.4133222840328082,
+        }
 
     def load_state(self) -> Dict:
         """Load monitor state from disk."""
@@ -80,6 +87,9 @@ class CompetitionMonitor:
             'ignored_sha256s': [],
             'cooldown_until': None,
             'last_submission_result': None,
+            'current_rank': None,
+            'current_score': None,
+            'current_total_teams': None,
         }
         for key, value in defaults.items():
             state.setdefault(key, value)
@@ -91,6 +101,47 @@ class CompetitionMonitor:
         """Save monitor state to disk."""
         with open(self.state_file, 'w', encoding='utf-8') as f:
             json.dump(self.state, f, indent=2, ensure_ascii=False, sort_keys=True)
+
+    def reconcile_unconfirmed_attempt(self, rank_data: Dict) -> None:
+        """Mark an unconfirmed click as platform-accepted once the leaderboard moves.
+
+        The upload page can close without showing an explicit success state.  In
+        that case the leaderboard is the source of truth: if the next refreshed
+        score differs from the score captured before the attempt, the platform
+        must have scored a newer artifact.
+        """
+        result = self.state.get('last_submission_result') or {}
+        if result.get('status') not in {'attempted_unconfirmed_or_failed', 'submit_clicked_unconfirmed_accepted_manual_retry'}:
+            return
+        baseline_score = result.get('baseline_score_before_attempt')
+        current_score = rank_data.get('score')
+        if baseline_score is None or current_score is None:
+            return
+        try:
+            changed = abs(float(current_score) - float(baseline_score)) > 1e-9
+        except (TypeError, ValueError):
+            return
+        if not changed:
+            return
+        sha = result.get('zip_sha256')
+        if sha:
+            submitted = set(self.state.get('submitted_sha256s', []))
+            submitted.add(sha)
+            self.state['submitted_sha256s'] = sorted(submitted)
+            self.state['last_submitted_zip_sha256'] = sha
+        result['status'] = 'confirmed_by_leaderboard'
+        result['leaderboard_rank_after_attempt'] = rank_data.get('rank')
+        result['leaderboard_score_after_attempt'] = current_score
+        result['confirmed_at'] = datetime.now().isoformat()
+        self.state['last_submission_result'] = result
+        self.state['last_submission'] = result.get('attempted_at') or datetime.now().isoformat()
+        self.state['last_submission_time'] = self.state['last_submission']
+        self.state['last_submitted_zip'] = result.get('zip_path')
+        self.state['submission_count'] += 1
+        print(
+            f"  ✓ Previous unconfirmed submit is confirmed by leaderboard: "
+            f"{baseline_score} -> {current_score}"
+        )
 
     def check_leaderboard(self) -> Optional[Dict]:
         """Check current leaderboard position."""
@@ -116,6 +167,10 @@ class CompetitionMonitor:
                         rank_data = json.load(f)
 
                     self.state['last_check'] = datetime.now().isoformat()
+                    self.state['current_rank'] = rank_data.get('rank')
+                    self.state['current_score'] = rank_data.get('score')
+                    self.state['current_total_teams'] = rank_data.get('total_teams')
+                    self.reconcile_unconfirmed_attempt(rank_data)
 
                     if self.state['best_rank'] is None or rank_data['rank'] < self.state['best_rank']:
                         self.state['best_rank'] = rank_data['rank']
@@ -182,7 +237,7 @@ class CompetitionMonitor:
         if not predictions_dir.exists():
             return None
 
-        zip_files = list(predictions_dir.glob('*.zip'))
+        zip_files = [path for path in predictions_dir.glob('*.zip') if path.is_file()]
         if not zip_files:
             return None
 
@@ -193,7 +248,10 @@ class CompetitionMonitor:
         """Return candidate decisions for ZIPs in the watched directory."""
         if not predictions_dir.exists():
             return []
-        zip_files = sorted(predictions_dir.glob('*.zip'), key=lambda p: p.stat().st_mtime)
+        zip_files = sorted(
+            (path for path in predictions_dir.glob('*.zip') if path.is_file()),
+            key=lambda p: p.stat().st_mtime,
+        )
         if queue_order == 'newest':
             zip_files.reverse()
         return [self.evaluate_candidate(path) for path in zip_files]
@@ -218,11 +276,76 @@ class CompetitionMonitor:
             return CandidateDecision(zip_path, metadata_path, sha, False, 'zip SHA does not match promotion metadata', metadata)
         if metadata and metadata.get('ready_for_submit') is not True:
             return CandidateDecision(zip_path, metadata_path, sha, False, 'promotion metadata is not ready_for_submit', metadata)
+        if self.require_promotion and metadata:
+            reason = str(metadata.get('reason') or '').strip()
+            if not reason:
+                return CandidateDecision(zip_path, metadata_path, sha, False, 'promotion metadata is missing a reason', metadata)
+            guard = metadata.get('submission_guard') or {}
+            root_txt_count = guard.get('root_txt_count')
+            expected_txt_count = guard.get('expected_txt_count')
+            nested_txt_count = guard.get('nested_txt_count')
+            if expected_txt_count is not None and root_txt_count != expected_txt_count:
+                return CandidateDecision(
+                    zip_path,
+                    metadata_path,
+                    sha,
+                    False,
+                    f'promotion guard txt count mismatch: root={root_txt_count}, expected={expected_txt_count}',
+                    metadata,
+                )
+            if nested_txt_count not in (None, 0):
+                return CandidateDecision(zip_path, metadata_path, sha, False, 'promotion guard reports nested TXT files', metadata)
+            has_local_evidence = any(
+                metadata.get(key) not in (None, '', [])
+                for key in ('local_map', 'val_map_50_95', 'source_ranking_json', 'source_sweep_ranking_json')
+            )
+            if not has_local_evidence:
+                return CandidateDecision(
+                    zip_path,
+                    metadata_path,
+                    sha,
+                    False,
+                    'promotion metadata lacks local validation or sweep evidence',
+                    metadata,
+                )
+            current_score = self.state.get('best_score') or self.state.get('current_score')
+            leaderboard_baseline = metadata.get('leaderboard_baseline')
+            if current_score is not None and leaderboard_baseline is not None:
+                try:
+                    if float(leaderboard_baseline) + 1e-9 < float(current_score):
+                        return CandidateDecision(
+                            zip_path,
+                            metadata_path,
+                            sha,
+                            False,
+                            f'promotion baseline {leaderboard_baseline} is stale below current best score {current_score}',
+                            metadata,
+                        )
+                except (TypeError, ValueError):
+                    return CandidateDecision(zip_path, metadata_path, sha, False, 'invalid leaderboard_baseline in promotion metadata', metadata)
+            candidate_kind = str(metadata.get('candidate_kind') or '')
+            min_local_map = self.min_local_map_by_kind.get(candidate_kind)
+            if min_local_map is not None:
+                local_map = metadata.get('val_map_50_95', metadata.get('local_map'))
+                try:
+                    if local_map is None or float(local_map) <= min_local_map + 1e-12:
+                        return CandidateDecision(
+                            zip_path,
+                            metadata_path,
+                            sha,
+                            False,
+                            f'local validation mAP {local_map} does not beat current {candidate_kind} gate {min_local_map:.6f}',
+                            metadata,
+                        )
+                except (TypeError, ValueError):
+                    return CandidateDecision(zip_path, metadata_path, sha, False, 'invalid local mAP in promotion metadata', metadata)
         manifest_path = metadata.get('manifest_path') if metadata else None
         if self.require_promotion and (not manifest_path or not Path(manifest_path).exists()):
             return CandidateDecision(zip_path, metadata_path, sha, False, 'missing submission manifest', metadata)
         if sha in set(self.state.get('submitted_sha256s', [])):
             return CandidateDecision(zip_path, metadata_path, sha, False, 'already submitted by SHA', metadata)
+        if sha in set(self.state.get('attempted_sha256s', [])):
+            return CandidateDecision(zip_path, metadata_path, sha, False, 'already attempted by SHA', metadata)
         if sha in set(self.state.get('ignored_sha256s', [])):
             return CandidateDecision(zip_path, metadata_path, sha, False, 'ignored by startup baseline', metadata)
         cooldown_until = self.state.get('cooldown_until')
@@ -247,9 +370,12 @@ class CompetitionMonitor:
             'zip_path': str(decision.zip_path),
             'zip_sha256': decision.sha256,
             'attempted_at': now.isoformat(),
-            'status': 'submitted' if ok else 'failed_or_unconfirmed',
+            'status': 'submitted_confirmed' if ok else 'attempted_unconfirmed_or_failed',
             'reason': decision.metadata.get('reason'),
+            'baseline_rank_before_attempt': self.state.get('current_rank'),
+            'baseline_score_before_attempt': self.state.get('current_score'),
         }
+        self.state['cooldown_until'] = (now + timedelta(seconds=self.min_submit_interval_seconds)).isoformat()
         if ok:
             submitted = set(self.state.get('submitted_sha256s', []))
             submitted.add(decision.sha256)
@@ -259,7 +385,6 @@ class CompetitionMonitor:
             self.state['last_submitted_zip'] = str(decision.zip_path)
             self.state['last_submitted_zip_sha256'] = decision.sha256
             self.state['submission_count'] += 1
-            self.state['cooldown_until'] = (now + timedelta(seconds=self.min_submit_interval_seconds)).isoformat()
         self.save_state()
         return ok
 
@@ -270,9 +395,11 @@ class CompetitionMonitor:
         ignored = set(self.state.get('ignored_sha256s', []))
         existing_zips = predictions_dir.glob('*.zip') if predictions_dir.exists() else []
         for zip_path in existing_zips:
+            if not zip_path.is_file():
+                continue
             try:
                 ignored.add(file_sha256(zip_path))
-            except FileNotFoundError:
+            except (FileNotFoundError, IsADirectoryError):
                 pass
         self.state['ignored_sha256s'] = sorted(ignored)
         self.save_state()
@@ -381,7 +508,7 @@ def main():
     parser.add_argument('--allow-unpromoted', dest='require_promotion', action='store_false', help='Legacy mode: allow raw ZIPs without promotion metadata')
     parser.add_argument('--min-submit-interval-seconds', type=int, default=3900, help='Cooldown after a confirmed submission')
     parser.add_argument('--queue-order', choices=('oldest', 'newest'), default='oldest')
-    parser.add_argument('--accept-unconfirmed-submit', action='store_true', help='Pass through to submit script and count unconfirmed clicks as success')
+    parser.add_argument('--accept-unconfirmed-submit', action='store_true', help='Pass through to submit script and count unconfirmed clicks as success; use only for manual recovery/debug sessions')
 
     args = parser.parse_args()
 
