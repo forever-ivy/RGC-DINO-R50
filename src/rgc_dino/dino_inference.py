@@ -12,6 +12,7 @@ from torch import Tensor
 from .constants import MAX_PREDICTIONS_PER_IMAGE, NUM_CLASSES
 from .labels import DetectionLabel
 from .metrics import box_iou_xyxy, xywh_to_xyxy
+from .postprocess import ClassThresholds
 
 
 def dino_result_to_detection_labels(
@@ -23,6 +24,7 @@ def dino_result_to_detection_labels(
     max_detections: int = MAX_PREDICTIONS_PER_IMAGE,
     nms_iou_threshold: float | None = None,
     score_calibrator: "ClasswiseScoreCalibrator | None" = None,
+    class_score_thresholds: ClassThresholds | None = None,
 ) -> list[DetectionLabel]:
     """Convert one DINO postprocessor result into normalized submission labels."""
     if orig_height <= 0 or orig_width <= 0:
@@ -41,7 +43,10 @@ def dino_result_to_detection_labels(
             continue
         if score_calibrator is not None:
             confidence = score_calibrator.calibrate(class_id, confidence)
-        if confidence < score_threshold:
+        threshold = score_threshold
+        if class_score_thresholds is not None:
+            threshold = max(threshold, float(class_score_thresholds[class_id]))
+        if confidence < threshold:
             continue
 
         x1, y1, x2, y2 = [float(value) for value in box_tensor.tolist()]

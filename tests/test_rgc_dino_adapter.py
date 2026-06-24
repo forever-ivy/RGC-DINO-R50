@@ -59,6 +59,22 @@ class ProjectedRgcFeatureFusionTest(unittest.TestCase):
                 self.assertGreaterEqual(float(gate.detach().min()), 0.05)
                 self.assertLessEqual(float(gate.detach().max()), 0.50)
 
+    def test_accepts_extended_quality_width_for_rdt_feature_set(self) -> None:
+        adapter = ProjectedRgcFeatureFusion(channels=8, quality_dim=35, num_levels=2, side_base_channels=4)
+        rgb_features = [
+            torch.randn(1, 8, 16, 16),
+            torch.randn(1, 8, 8, 8),
+        ]
+
+        fused = adapter(
+            rgb_features,
+            torch.randn(1, 1, 64, 64),
+            torch.randn(1, 3, 64, 64),
+            torch.randn(1, 35),
+        )
+
+        self.assertEqual([feature.shape for feature in fused], [feature.shape for feature in rgb_features])
+
     def test_rejects_wrong_quality_width(self) -> None:
         adapter = ProjectedRgcFeatureFusion(channels=8, quality_dim=24, num_levels=2)
         rgb_features = [

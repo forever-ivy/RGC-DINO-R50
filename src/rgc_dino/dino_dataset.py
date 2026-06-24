@@ -16,7 +16,7 @@ from torch.utils.data import Dataset
 from .constants import DEPTH_VALID_MAX_MM, DEPTH_VALID_MIN_MM, RGB_MEAN, RGB_STD
 from .dataset import MultimodalSample, discover_aligned_samples
 from .labels import DetectionLabel, load_label_file, load_label_file_clipped
-from .quality_features import QUALITY_FEATURE_NAMES, load_quality_feature_cache, load_quality_features
+from .quality_features import QUALITY_FEATURE_NAMES, feature_names_for_set, load_quality_feature_cache, load_quality_features
 
 
 class MultimodalDinoDataset(Dataset):
@@ -31,6 +31,7 @@ class MultimodalDinoDataset(Dataset):
         clip_labels: bool = True,
         random_horizontal_flip_prob: float = 0.0,
         quality_cache: dict[str, dict[str, float]] | None = None,
+        quality_feature_names: Sequence[str] = QUALITY_FEATURE_NAMES,
     ) -> None:
         if not samples:
             raise ValueError("samples must not be empty")
@@ -49,6 +50,7 @@ class MultimodalDinoDataset(Dataset):
         self.clip_labels = clip_labels
         self.random_horizontal_flip_prob = random_horizontal_flip_prob
         self.quality_cache = quality_cache
+        self.quality_feature_names = tuple(quality_feature_names)
 
     @classmethod
     def from_paths(
@@ -63,6 +65,8 @@ class MultimodalDinoDataset(Dataset):
         random_horizontal_flip_prob: float = 0.0,
         quality_cache: dict[str, dict[str, float]] | None = None,
         quality_cache_path: str | Path | None = None,
+        quality_feature_set: str = "base",
+        quality_feature_names: Sequence[str] | None = None,
     ) -> "MultimodalDinoDataset":
         samples = discover_aligned_samples(dataset_root, labels_dir=labels_dir, require_labels=True)
         if sample_ids is not None:
@@ -71,9 +75,10 @@ class MultimodalDinoDataset(Dataset):
             if missing:
                 raise ValueError(f"sample ids not found in aligned labeled dataset: {missing[:5]}")
             samples = [by_id[sample_id] for sample_id in sample_ids]
+        resolved_quality_feature_names = tuple(quality_feature_names) if quality_feature_names is not None else feature_names_for_set(quality_feature_set)
         loaded_quality_cache = quality_cache
         if quality_cache_path is not None:
-            loaded_quality_cache = load_quality_feature_cache(quality_cache_path)
+            loaded_quality_cache = load_quality_feature_cache(quality_cache_path, feature_set=quality_feature_set)
         return cls(
             samples,
             image_max_side=image_max_side,
@@ -81,6 +86,7 @@ class MultimodalDinoDataset(Dataset):
             clip_labels=clip_labels,
             random_horizontal_flip_prob=random_horizontal_flip_prob,
             quality_cache=loaded_quality_cache,
+            quality_feature_names=resolved_quality_feature_names,
         )
 
     def __len__(self) -> int:
@@ -94,6 +100,7 @@ class MultimodalDinoDataset(Dataset):
             image_max_side=self._select_image_max_side(),
             horizontal_flip=horizontal_flip,
             quality_cache=self.quality_cache,
+            quality_feature_names=self.quality_feature_names,
         )
         records = _load_records(sample, clip_labels=self.clip_labels)
         if horizontal_flip:
@@ -129,6 +136,7 @@ class MultimodalDinoInferenceDataset(Dataset):
         *,
         image_max_side: int | None = 640,
         quality_cache: dict[str, dict[str, float]] | None = None,
+        quality_feature_names: Sequence[str] = QUALITY_FEATURE_NAMES,
     ) -> None:
         if not samples:
             raise ValueError("samples must not be empty")
@@ -137,6 +145,7 @@ class MultimodalDinoInferenceDataset(Dataset):
         self.samples = tuple(samples)
         self.image_max_side = image_max_side
         self.quality_cache = quality_cache
+        self.quality_feature_names = tuple(quality_feature_names)
 
     @classmethod
     def from_paths(
@@ -147,6 +156,8 @@ class MultimodalDinoInferenceDataset(Dataset):
         image_max_side: int | None = 640,
         quality_cache: dict[str, dict[str, float]] | None = None,
         quality_cache_path: str | Path | None = None,
+        quality_feature_set: str = "base",
+        quality_feature_names: Sequence[str] | None = None,
     ) -> "MultimodalDinoInferenceDataset":
         samples = discover_aligned_samples(dataset_root)
         if sample_ids is not None:
@@ -155,17 +166,28 @@ class MultimodalDinoInferenceDataset(Dataset):
             if missing:
                 raise ValueError(f"sample ids not found in aligned dataset: {missing[:5]}")
             samples = [by_id[sample_id] for sample_id in sample_ids]
+        resolved_quality_feature_names = tuple(quality_feature_names) if quality_feature_names is not None else feature_names_for_set(quality_feature_set)
         loaded_quality_cache = quality_cache
         if quality_cache_path is not None:
-            loaded_quality_cache = load_quality_feature_cache(quality_cache_path)
-        return cls(samples, image_max_side=image_max_side, quality_cache=loaded_quality_cache)
+            loaded_quality_cache = load_quality_feature_cache(quality_cache_path, feature_set=quality_feature_set)
+        return cls(
+            samples,
+            image_max_side=image_max_side,
+            quality_cache=loaded_quality_cache,
+            quality_feature_names=resolved_quality_feature_names,
+        )
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, index: int) -> tuple[dict[str, Tensor], dict[str, Tensor | str]]:
         sample = self.samples[index]
-        loaded = _load_modalities(sample, image_max_side=self.image_max_side, quality_cache=self.quality_cache)
+        loaded = _load_modalities(
+            sample,
+            image_max_side=self.image_max_side,
+            quality_cache=self.quality_cache,
+            quality_feature_names=self.quality_feature_names,
+        )
         return (
             loaded.tensors,
             {
@@ -192,6 +214,7 @@ def _load_modalities(
     image_max_side: int | None,
     horizontal_flip: bool = False,
     quality_cache: dict[str, dict[str, float]] | None = None,
+    quality_feature_names: Sequence[str] = QUALITY_FEATURE_NAMES,
 ) -> _LoadedModalities:
     rgb_image = _load_pil(sample.visible_path, mode="RGB")
     infrared_image = _load_pil(sample.infrared_path, mode="L")
@@ -219,7 +242,7 @@ def _load_modalities(
                 _resize(infrared_image, resized_width, resized_height, Image.Resampling.BILINEAR)
             ),
             "depth": _depth_tensor(_resize(depth_image, resized_width, resized_height, Image.Resampling.NEAREST)),
-            "quality": _quality_tensor(sample, quality_cache=quality_cache),
+            "quality": _quality_tensor(sample, quality_cache=quality_cache, feature_names=quality_feature_names),
         },
         original_height=original_height,
         original_width=original_width,
@@ -299,14 +322,21 @@ def _depth_tensor(image: Image.Image) -> Tensor:
     return torch.from_numpy(stacked.astype(np.float32)).contiguous()
 
 
-def _quality_tensor(sample: MultimodalSample, *, quality_cache: dict[str, dict[str, float]] | None = None) -> Tensor:
+def _quality_tensor(
+    sample: MultimodalSample,
+    *,
+    quality_cache: dict[str, dict[str, float]] | None = None,
+    feature_names: Sequence[str] = QUALITY_FEATURE_NAMES,
+) -> Tensor:
     if quality_cache is not None:
         if sample.sample_id not in quality_cache:
             raise KeyError(f"quality cache does not contain sample id {sample.sample_id}")
         features = quality_cache[sample.sample_id]
     else:
+        if tuple(feature_names) != QUALITY_FEATURE_NAMES:
+            raise ValueError("non-base quality feature sets require --quality-cache")
         features = load_quality_features(sample.visible_path, sample.infrared_path, sample.depth_path)
-    return torch.tensor([features[name] for name in QUALITY_FEATURE_NAMES], dtype=torch.float32)
+    return torch.tensor([features[name] for name in feature_names], dtype=torch.float32)
 
 
 def _load_records(sample: MultimodalSample, *, clip_labels: bool) -> list[DetectionLabel]:

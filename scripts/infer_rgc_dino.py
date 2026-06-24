@@ -26,6 +26,8 @@ from rgc_dino.dino_batch import collate_rgc_dino_batch  # noqa: E402
 from rgc_dino.dino_dataset import MultimodalDinoInferenceDataset  # noqa: E402
 from rgc_dino.dino_inference import ClasswiseScoreCalibrator, dino_result_to_detection_labels  # noqa: E402
 from rgc_dino.dino_training import load_checkpoint_into_model  # noqa: E402
+from rgc_dino.postprocess import load_class_score_thresholds  # noqa: E402
+from rgc_dino.quality_features import feature_names_for_set  # noqa: E402
 from rgc_dino.models.rgc_dino_adapter import RgcDinoModel  # noqa: E402
 from rgc_dino.sample_ids import load_sample_ids_file  # noqa: E402
 from rgc_dino.submission import validate_submission_dir, write_submission_files, zip_submission_dir  # noqa: E402
@@ -50,7 +52,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-detections", type=int, default=100)
     parser.add_argument("--nms-iou-threshold", type=float, help="optional classwise NMS IoU threshold")
     parser.add_argument("--score-calibrator", type=Path, help="optional JSON classwise score calibrator")
+    parser.add_argument("--class-score-thresholds", type=Path, help="optional JSON per-class hard score thresholds")
     parser.add_argument("--quality-cache", type=Path, help="optional sample_id -> quality feature cache JSON")
+    parser.add_argument("--quality-feature-set", default="base", choices=("base", "base_rdt"))
     parser.add_argument("--manifest-path", type=Path, help="optional submission manifest JSON path")
     parser.add_argument("--split-manifest", type=Path, default=ROOT / "outputs" / "splits" / "split_manifest.json")
     parser.add_argument("--sample-ids-file", type=Path, help="optional newline-delimited sample IDs to predict")
@@ -68,8 +72,13 @@ def main() -> int:
     device = torch.device(args.device)
     official_args = _build_official_args(args)
     model, _criterion, postprocessors = build_model_main(official_args)
+    quality_feature_names = feature_names_for_set(args.quality_feature_set)
     if args.model_mode == "rgc":
-        detector = RgcDinoModel(model, side_base_channels=args.side_base_channels)
+        detector = RgcDinoModel(
+            model,
+            side_base_channels=args.side_base_channels,
+            quality_dim=len(quality_feature_names),
+        )
         report = _load_checkpoint(detector, args.checkpoint, scope=args.checkpoint_scope)
     else:
         detector = model
@@ -82,6 +91,11 @@ def main() -> int:
         if args.score_calibrator is not None
         else None
     )
+    class_score_thresholds = (
+        load_class_score_thresholds(args.class_score_thresholds)
+        if args.class_score_thresholds is not None
+        else None
+    )
 
     sample_ids = load_sample_ids_file(args.sample_ids_file) if args.sample_ids_file is not None else None
     dataset = MultimodalDinoInferenceDataset.from_paths(
@@ -89,12 +103,14 @@ def main() -> int:
         sample_ids=sample_ids,
         image_max_side=args.image_max_side,
         quality_cache_path=args.quality_cache,
+        quality_feature_set=args.quality_feature_set,
     )
     if args.limit is not None:
         dataset = MultimodalDinoInferenceDataset(
             dataset.samples[: args.limit],
             image_max_side=args.image_max_side,
             quality_cache=dataset.quality_cache,
+            quality_feature_names=dataset.quality_feature_names,
         )
     image_ids = [sample.sample_id for sample in dataset.samples]
     loader = DataLoader(
@@ -124,6 +140,7 @@ def main() -> int:
                     max_detections=args.max_detections,
                     nms_iou_threshold=args.nms_iou_threshold,
                     score_calibrator=score_calibrator,
+                    class_score_thresholds=class_score_thresholds,
                 )
 
     write_submission_files(

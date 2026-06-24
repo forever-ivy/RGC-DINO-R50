@@ -32,7 +32,7 @@ from rgc_dino.dino_batch import collate_rgc_dino_batch  # noqa: E402
 from rgc_dino.dino_dataset import MultimodalDinoDataset  # noqa: E402
 from rgc_dino.dino_training import load_checkpoint_into_model, load_training_state, move_targets_to_device  # noqa: E402
 from rgc_dino.models.rgc_dino_adapter import RgcDinoModel  # noqa: E402
-from rgc_dino.quality_features import QUALITY_FEATURE_NAMES, load_quality_feature_cache  # noqa: E402
+from rgc_dino.quality_features import QUALITY_FEATURE_NAMES, feature_names_for_set, load_quality_feature_cache  # noqa: E402
 from rgc_dino.training_splits import select_train_val_ids  # noqa: E402
 
 
@@ -60,6 +60,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--random-horizontal-flip-prob", type=float, default=0.5)
     parser.add_argument("--quality-cache", type=Path)
+    parser.add_argument("--quality-feature-set", default="base", choices=("base", "base_rdt"))
     parser.add_argument("--side-base-channels", type=int, default=32)
     parser.add_argument("--limit-train", type=int)
     parser.add_argument("--limit-val", type=int)
@@ -104,13 +105,19 @@ def main() -> int:
 
     device = torch.device(args.device)
     model, criterion, _postprocessors = build_model_main(official_args)
+    quality_feature_names = feature_names_for_set(args.quality_feature_set)
     wrapped_model = RgcDinoModel(
         model,
         side_base_channels=args.side_base_channels,
+        quality_dim=len(quality_feature_names),
     )
-    quality_cache = load_quality_feature_cache(args.quality_cache) if args.quality_cache is not None else None
+    quality_cache = (
+        load_quality_feature_cache(args.quality_cache, feature_set=args.quality_feature_set)
+        if args.quality_cache is not None
+        else None
+    )
     if quality_cache is not None:
-        _configure_quality_stats(wrapped_model, quality_cache)
+        _configure_quality_stats(wrapped_model, quality_cache, quality_feature_names=quality_feature_names)
     if args.pretrain_dino_weights is not None:
         report = load_checkpoint_into_model(
             wrapped_model.dino_model,
@@ -151,7 +158,11 @@ def main() -> int:
     wrapped_model.to(device)
     criterion.to(device)
 
-    train_loader, val_loader = _build_loaders(args, quality_cache=quality_cache)
+    train_loader, val_loader = _build_loaders(
+        args,
+        quality_cache=quality_cache,
+        quality_feature_names=quality_feature_names,
+    )
     if args.log_gates_batches > 0:
         print(
             json.dumps(
@@ -425,6 +436,7 @@ def _build_loaders(
     args: argparse.Namespace,
     *,
     quality_cache: dict[str, dict[str, float]] | None = None,
+    quality_feature_names: tuple[str, ...] = QUALITY_FEATURE_NAMES,
 ):
     train_ids, val_ids = select_train_val_ids(
         dataset_root=args.dataset_root,
@@ -445,6 +457,7 @@ def _build_loaders(
         image_max_sides=getattr(args, "train_image_max_sides", None),
         random_horizontal_flip_prob=args.random_horizontal_flip_prob,
         quality_cache=quality_cache,
+        quality_feature_names=quality_feature_names,
     )
     val_dataset = None
     if val_ids:
@@ -454,6 +467,7 @@ def _build_loaders(
             sample_ids=val_ids,
             image_max_side=args.image_max_side,
             quality_cache=quality_cache,
+            quality_feature_names=quality_feature_names,
         )
     train_loader = DataLoader(
         train_dataset,
@@ -479,19 +493,25 @@ def _build_loaders(
 def _configure_quality_stats(
     model: RgcDinoModel,
     quality_cache: dict[str, dict[str, float]],
+    *,
+    quality_feature_names: tuple[str, ...] = QUALITY_FEATURE_NAMES,
 ) -> None:
-    median, mad = _quality_median_mad(quality_cache)
+    median, mad = _quality_median_mad(quality_cache, quality_feature_names=quality_feature_names)
     fusion = getattr(getattr(model, "feature_fusion", None), "fusion", None)
     if fusion is None or not hasattr(fusion, "set_quality_stats"):
         raise TypeError("RGC feature fusion does not expose set_quality_stats")
     fusion.set_quality_stats(median=median, mad=mad)
 
 
-def _quality_median_mad(quality_cache: dict[str, dict[str, float]]) -> tuple[torch.Tensor, torch.Tensor]:
+def _quality_median_mad(
+    quality_cache: dict[str, dict[str, float]],
+    *,
+    quality_feature_names: tuple[str, ...] = QUALITY_FEATURE_NAMES,
+) -> tuple[torch.Tensor, torch.Tensor]:
     if not quality_cache:
         raise ValueError("quality cache must not be empty")
     rows = [
-        [features[name] for name in QUALITY_FEATURE_NAMES]
+        [features[name] for name in quality_feature_names]
         for _sample_id, features in sorted(quality_cache.items())
     ]
     values = torch.tensor(rows, dtype=torch.float32)

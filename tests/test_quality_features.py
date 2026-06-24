@@ -8,7 +8,9 @@ from PIL import Image
 
 from rgc_dino.quality_features import (
     QUALITY_FEATURE_NAMES,
+    RDT_QUALITY_FEATURE_NAMES,
     compute_quality_features,
+    feature_names_for_set,
     load_quality_feature_cache,
     load_quality_features,
     write_quality_feature_cache,
@@ -105,6 +107,25 @@ class QualityFeaturesTest(unittest.TestCase):
             loaded = load_quality_feature_cache(cache_path)
 
             self.assertEqual(tuple(loaded["sample_a"]), QUALITY_FEATURE_NAMES)
+            self.assertEqual(loaded, features)
+
+    def test_base_rdt_quality_feature_cache_round_trips(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "quality_base_rdt.json"
+            feature_names = feature_names_for_set("base_rdt")
+            features = {
+                "sample_a": {
+                    name: float(index) / 100.0
+                    for index, name in enumerate(feature_names)
+                }
+            }
+
+            write_quality_feature_cache(cache_path, features, feature_set="base_rdt")
+            loaded = load_quality_feature_cache(cache_path, feature_set="base_rdt")
+
+            self.assertEqual(feature_names, QUALITY_FEATURE_NAMES + RDT_QUALITY_FEATURE_NAMES)
+            self.assertEqual(len(feature_names), 35)
+            self.assertEqual(tuple(loaded["sample_a"]), feature_names)
             self.assertEqual(loaded, features)
 
     def test_build_quality_cache_parallel_matches_single_worker(self) -> None:

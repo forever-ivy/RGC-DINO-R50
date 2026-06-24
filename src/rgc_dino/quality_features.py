@@ -38,6 +38,25 @@ QUALITY_FEATURE_NAMES: tuple[str, ...] = (
     "depth_far_ratio",
 )
 
+RDT_QUALITY_FEATURE_NAMES: tuple[str, ...] = (
+    "rdt_ir_attention_mean",
+    "rdt_ir_attention_std",
+    "rdt_depth_attention_mean",
+    "rdt_depth_attention_std",
+    "rdt_attention_mean",
+    "rdt_attention_std",
+    "rdt_attention_top10_mean",
+    "rdt_attention_hot_ratio",
+    "rdt_depth_valid_ratio",
+    "rdt_gate_mean",
+    "rdt_gate_std",
+)
+
+QUALITY_FEATURE_SETS: dict[str, tuple[str, ...]] = {
+    "base": QUALITY_FEATURE_NAMES,
+    "base_rdt": QUALITY_FEATURE_NAMES + RDT_QUALITY_FEATURE_NAMES,
+}
+
 
 def load_quality_features(
     visible_path: str | Path,
@@ -56,14 +75,28 @@ def load_quality_features(
     return compute_quality_features(visible, infrared, depth)
 
 
-def load_quality_feature_cache(path: str | Path) -> dict[str, dict[str, float]]:
-    """Load a sample_id -> 24-D quality feature cache from JSON."""
+def feature_names_for_set(feature_set: str = "base") -> tuple[str, ...]:
+    """Return the ordered quality feature names for a named ablation set."""
+    try:
+        return QUALITY_FEATURE_SETS[feature_set]
+    except KeyError as exc:
+        choices = ", ".join(sorted(QUALITY_FEATURE_SETS))
+        raise ValueError(f"unknown quality feature set {feature_set!r}; choices: {choices}") from exc
+
+
+def load_quality_feature_cache(
+    path: str | Path,
+    *,
+    feature_set: str = "base",
+) -> dict[str, dict[str, float]]:
+    """Load a sample_id -> quality feature cache from JSON."""
     cache_path = Path(path)
+    feature_names = feature_names_for_set(feature_set)
     payload = json.loads(cache_path.read_text(encoding="utf-8"))
     if not isinstance(payload, Mapping):
         raise ValueError("quality feature cache must be a JSON object")
     return {
-        str(sample_id): _normalize_cached_features(features, source=f"{cache_path}:{sample_id}")
+        str(sample_id): _normalize_cached_features(features, source=f"{cache_path}:{sample_id}", feature_names=feature_names)
         for sample_id, features in payload.items()
     }
 
@@ -71,12 +104,15 @@ def load_quality_feature_cache(path: str | Path) -> dict[str, dict[str, float]]:
 def write_quality_feature_cache(
     path: str | Path,
     features_by_sample_id: Mapping[str, Mapping[str, float]],
+    *,
+    feature_set: str = "base",
 ) -> None:
     """Write a stable JSON quality feature cache."""
     cache_path = Path(path)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
+    feature_names = feature_names_for_set(feature_set)
     normalized = {
-        str(sample_id): _normalize_cached_features(features, source=str(sample_id))
+        str(sample_id): _normalize_cached_features(features, source=str(sample_id), feature_names=feature_names)
         for sample_id, features in sorted(features_by_sample_id.items())
     }
     cache_path.write_text(
@@ -102,14 +138,20 @@ def compute_quality_features(
     return {name: float(features[name]) for name in QUALITY_FEATURE_NAMES}
 
 
-def _normalize_cached_features(features: Mapping[str, float], *, source: str) -> dict[str, float]:
+def _normalize_cached_features(
+    features: Mapping[str, float],
+    *,
+    source: str,
+    feature_names: tuple[str, ...] = QUALITY_FEATURE_NAMES,
+) -> dict[str, float]:
     if not isinstance(features, Mapping):
         raise ValueError(f"{source}: cached quality features must be an object")
-    missing = [name for name in QUALITY_FEATURE_NAMES if name not in features]
-    extra = sorted(str(name) for name in features if name not in QUALITY_FEATURE_NAMES)
+    missing = [name for name in feature_names if name not in features]
+    allowed = set(feature_names)
+    extra = sorted(str(name) for name in features if name not in allowed)
     if missing or extra:
         raise ValueError(f"{source}: invalid quality feature keys missing={missing[:5]} extra={extra[:5]}")
-    return {name: _safe_float(features[name]) for name in QUALITY_FEATURE_NAMES}
+    return {name: _safe_float(features[name]) for name in feature_names}
 
 
 def _rgb_features(gray: np.ndarray) -> Mapping[str, float]:

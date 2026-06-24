@@ -65,3 +65,7 @@ submission_log.jsonl
 leaderboard_history.jsonl
 monitor_state.json
 submission_error.png
+
+# Claude Code local runtime state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

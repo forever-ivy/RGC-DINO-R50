@@ -16,6 +16,16 @@ sys.path.insert(0, str(ROOT / "src"))
 from rgc_dino.constants import MAX_PREDICTIONS_PER_IMAGE, NUM_CLASSES  # noqa: E402
 from rgc_dino.dataset import discover_aligned_samples  # noqa: E402
 from rgc_dino.labels import DetectionLabel  # noqa: E402
+from rgc_dino.postprocess import (  # noqa: E402
+    apply_class_score_thresholds,
+    apply_classwise_nms,
+    cap_predictions_per_image,
+    cap_predictions_per_image_class_aware,
+    load_class_allocation_config,
+    load_class_score_thresholds,
+    summarize_predictions,
+    topk_truncation_report,
+)
 from rgc_dino.submission import validate_submission_dir, write_submission_files, zip_submission_dir  # noqa: E402
 from rgc_dino.submission_manifest import build_submission_manifest, write_submission_manifest  # noqa: E402
 
@@ -34,8 +44,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split-manifest", type=Path, default=ROOT / "outputs" / "splits" / "split_manifest.json")
     parser.add_argument("--git-commit", default=None)
     parser.add_argument("--calibrator-version", default="none")
-    parser.add_argument("--score-threshold", type=float, default=0.0)
+    parser.add_argument("--score-threshold", type=float, default=0.0, help="global candidate score threshold")
+    parser.add_argument("--class-score-thresholds", type=Path, help="optional JSON per-class hard score thresholds")
+    parser.add_argument("--nms-iou-threshold", type=float, help="optional classwise NMS IoU threshold before final top-k")
+    parser.add_argument("--class-allocation-config", type=Path, help="optional class-aware legal top-k allocation JSON")
     parser.add_argument("--max-detections", type=int, default=MAX_PREDICTIONS_PER_IMAGE)
+    parser.add_argument("--summary-path", type=Path, help="optional stable JSON path for conversion summary")
     return parser.parse_args()
 
 
@@ -64,9 +78,40 @@ def main() -> int:
             score_threshold=args.score_threshold,
         )
 
+    raw_prediction_summary = summarize_predictions(predictions, image_ids=image_ids)
+    class_score_thresholds = (
+        load_class_score_thresholds(args.class_score_thresholds)
+        if args.class_score_thresholds is not None
+        else None
+    )
+    predictions = apply_class_score_thresholds(predictions, class_score_thresholds)
+    after_class_threshold_summary = summarize_predictions(predictions, image_ids=image_ids)
+    predictions = apply_classwise_nms(predictions, iou_threshold=args.nms_iou_threshold)
+    after_nms_summary = summarize_predictions(predictions, image_ids=image_ids)
+    class_allocation_config = (
+        load_class_allocation_config(args.class_allocation_config)
+        if args.class_allocation_config is not None
+        else None
+    )
+    if class_allocation_config is not None:
+        final_predictions = cap_predictions_per_image_class_aware(
+            predictions,
+            max_detections=args.max_detections,
+            allocation=class_allocation_config,
+        )
+    else:
+        final_predictions = cap_predictions_per_image(predictions, max_detections=args.max_detections)
+    after_topk_summary = summarize_predictions(final_predictions, image_ids=image_ids)
+    topk_report = topk_truncation_report(
+        predictions,
+        final_predictions,
+        image_ids=image_ids,
+        max_detections=args.max_detections,
+    )
+
     write_submission_files(
         image_ids,
-        predictions,
+        final_predictions,
         args.output_dir,
         max_predictions_per_image=args.max_detections,
     )
@@ -78,10 +123,20 @@ def main() -> int:
         return 1
     summary: dict[str, Any] = {
         "files": len(image_ids),
-        "prediction_objects": sum(len(records) for records in predictions.values()),
+        "prediction_objects": after_topk_summary["prediction_objects"],
         "output_dir": str(args.output_dir),
         "score_threshold": args.score_threshold,
+        "class_score_thresholds_path": str(args.class_score_thresholds) if args.class_score_thresholds is not None else None,
+        "class_score_thresholds": list(class_score_thresholds) if class_score_thresholds is not None else None,
+        "nms_iou_threshold": args.nms_iou_threshold,
+        "class_allocation_config_path": str(args.class_allocation_config) if args.class_allocation_config is not None else None,
+        "class_allocation_config": class_allocation_config._asdict() if class_allocation_config is not None else None,
         "max_detections": args.max_detections,
+        "raw_prediction_summary": raw_prediction_summary,
+        "after_class_threshold_summary": after_class_threshold_summary,
+        "after_nms_summary": after_nms_summary,
+        "after_topk_summary": after_topk_summary,
+        "topk_truncation_report": topk_report,
     }
     if args.zip_path is not None:
         zip_submission_dir(args.output_dir, args.zip_path)
@@ -95,10 +150,26 @@ def main() -> int:
                 split_manifest_path=args.split_manifest,
                 calibrator_version=args.calibrator_version,
                 config_path=args.config_path,
+                postprocess={
+                    "score_threshold": args.score_threshold,
+                    "class_score_thresholds_path": str(args.class_score_thresholds) if args.class_score_thresholds is not None else None,
+                    "class_score_thresholds": list(class_score_thresholds) if class_score_thresholds is not None else None,
+                    "nms_iou_threshold": args.nms_iou_threshold,
+                    "class_allocation_config_path": str(args.class_allocation_config) if args.class_allocation_config is not None else None,
+                    "class_allocation_config": class_allocation_config._asdict() if class_allocation_config is not None else None,
+                    "max_detections": args.max_detections,
+                    "raw_prediction_summary": raw_prediction_summary,
+                    "after_class_threshold_summary": after_class_threshold_summary,
+                    "after_nms_summary": after_nms_summary,
+                    "after_topk_summary": after_topk_summary,
+                },
             )
             manifest_path = args.manifest_path or args.zip_path.with_suffix(".manifest.json")
             write_submission_manifest(manifest_path, manifest)
             summary["manifest_path"] = str(manifest_path)
+    if args.summary_path is not None:
+        args.summary_path.parent.mkdir(parents=True, exist_ok=True)
+        args.summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     return 0
 

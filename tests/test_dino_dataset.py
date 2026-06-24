@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 
 from rgc_dino.dino_dataset import MultimodalDinoDataset, MultimodalDinoInferenceDataset
-from rgc_dino.quality_features import QUALITY_FEATURE_NAMES
+from rgc_dino.quality_features import QUALITY_FEATURE_NAMES, feature_names_for_set
 
 
 class MultimodalDinoDatasetTest(unittest.TestCase):
@@ -221,6 +221,43 @@ class MultimodalDinoDatasetTest(unittest.TestCase):
                 sample, _target = dataset[0]
 
             self.assertTrue(torch.equal(sample["quality"], torch.arange(24, dtype=torch.float32)))
+
+    def test_uses_base_rdt_quality_cache_width(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "train"
+            labels = root / "labels"
+            for modality in ("visible", "infrared", "depth"):
+                (root / modality).mkdir(parents=True)
+            labels.mkdir()
+
+            rgb = np.zeros((4, 4, 3), dtype=np.uint8)
+            infrared = np.zeros((4, 4, 3), dtype=np.uint8)
+            depth = np.full((4, 4), 1000, dtype=np.uint16)
+            Image.fromarray(rgb).save(root / "visible" / "sample_rdt.png")
+            Image.fromarray(infrared).save(root / "infrared" / "sample_rdt.png")
+            Image.fromarray(depth).save(root / "depth" / "sample_rdt.png")
+            (labels / "sample_rdt.txt").write_text("1 0.5 0.5 0.5 0.5\n", encoding="utf-8")
+            feature_names = feature_names_for_set("base_rdt")
+            cached = {
+                "sample_rdt": {
+                    name: float(index)
+                    for index, name in enumerate(feature_names)
+                }
+            }
+
+            dataset = MultimodalDinoDataset.from_paths(
+                dataset_root=root,
+                labels_dir=labels,
+                sample_ids=["sample_rdt"],
+                image_max_side=4,
+                quality_cache=cached,
+                quality_feature_set="base_rdt",
+            )
+
+            sample, _target = dataset[0]
+
+            self.assertEqual(sample["quality"].shape, (35,))
+            self.assertTrue(torch.equal(sample["quality"], torch.arange(35, dtype=torch.float32)))
 
     def test_inference_dataset_does_not_require_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

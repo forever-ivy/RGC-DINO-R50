@@ -45,12 +45,13 @@ class RgcDinoModel(nn.Module):
         side_base_channels: int = 32,
         gate_min: float = 0.0,
         gate_max: float = 0.50,
+        quality_dim: int = len(QUALITY_FEATURE_NAMES),
     ) -> None:
         super().__init__()
         self.dino_model = dino_model
         self.feature_fusion = feature_fusion or ProjectedRgcFeatureFusion(
             channels=int(dino_model.hidden_dim),
-            quality_dim=len(QUALITY_FEATURE_NAMES),
+            quality_dim=quality_dim,
             num_levels=int(dino_model.num_feature_levels),
             side_base_channels=side_base_channels,
             gate_min=gate_min,

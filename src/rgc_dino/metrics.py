@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence
 
-from .constants import NUM_CLASSES
+from .constants import CLASS_NAMES, NUM_CLASSES
 from .labels import DetectionLabel
 
 BoxXYXY = tuple[float, float, float, float]
@@ -29,8 +29,159 @@ class MapResult:
     per_class: tuple[ClassAP, ...]
 
 
+@dataclass(frozen=True)
+class PredictionSafetyIssue:
+    image_id: str
+    reason: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class PredictionSafetyReport:
+    valid: bool
+    image_count: int
+    missing_image_count: int
+    empty_image_count: int
+    prediction_count: int
+    max_predictions_per_image: int
+    class_counts: dict[int, int]
+    confidence_min: float | None
+    confidence_max: float | None
+    issues: tuple[PredictionSafetyIssue, ...]
+
+
 def coco_iou_thresholds() -> tuple[float, ...]:
     return tuple(round(0.5 + index * 0.05, 2) for index in range(10))
+
+
+def map_at_iou(result: MapResult, iou_threshold: float) -> float:
+    """Return mean AP for one IoU threshold over classes with ground truth."""
+    threshold = round(float(iou_threshold), 2)
+    values = [
+        item.ap
+        for item in result.per_class
+        if round(item.iou_threshold, 2) == threshold and item.ground_truth_count > 0
+    ]
+    return sum(values) / len(values) if values else 0.0
+
+
+def per_class_ap_summary(result: MapResult, *, num_classes: int = NUM_CLASSES) -> list[dict[str, float | int | str]]:
+    """Summarize mAP@50:95/AP50/AP75/AP90 for each class."""
+    by_class: dict[int, list[ClassAP]] = {class_id: [] for class_id in range(num_classes)}
+    for item in result.per_class:
+        if 0 <= item.class_id < num_classes:
+            by_class[item.class_id].append(item)
+
+    summary: list[dict[str, float | int | str]] = []
+    for class_id in range(num_classes):
+        rows = by_class[class_id]
+        gt_count = max((row.ground_truth_count for row in rows), default=0)
+        pred_count = max((row.prediction_count for row in rows), default=0)
+        valid_rows = [row for row in rows if row.ground_truth_count > 0]
+        ap_values = [row.ap for row in valid_rows]
+        by_iou = {round(row.iou_threshold, 2): row.ap for row in valid_rows}
+        summary.append(
+            {
+                "class_id": class_id,
+                "class_name": CLASS_NAMES[class_id] if class_id < len(CLASS_NAMES) else str(class_id),
+                "ground_truth_count": gt_count,
+                "prediction_count": pred_count,
+                "ap_50_95": sum(ap_values) / len(ap_values) if ap_values else 0.0,
+                "ap_50": by_iou.get(0.5, 0.0),
+                "ap_75": by_iou.get(0.75, 0.0),
+                "ap_90": by_iou.get(0.9, 0.0),
+            }
+        )
+    return summary
+
+
+def map_summary(result: MapResult, *, num_classes: int = NUM_CLASSES) -> dict[str, object]:
+    """Return common aggregate and per-class AP diagnostics."""
+    return {
+        "map_50_95": result.map,
+        "map_50": result.map50,
+        "map_75": map_at_iou(result, 0.75),
+        "map_90": map_at_iou(result, 0.9),
+        "ground_truth_count": result.ground_truth_count,
+        "prediction_count": result.prediction_count,
+        "per_class_ap": per_class_ap_summary(result, num_classes=num_classes),
+    }
+
+
+def validate_prediction_safety(
+    predictions: Mapping[str, Sequence[DetectionLabel]],
+    *,
+    image_ids: Sequence[str],
+    max_predictions_per_image: int,
+    num_classes: int = NUM_CLASSES,
+) -> PredictionSafetyReport:
+    """Check prediction distributions for submission-safety diagnostics."""
+    issues: list[PredictionSafetyIssue] = []
+    class_counts = {class_id: 0 for class_id in range(num_classes)}
+    confidences: list[float] = []
+    missing = 0
+    empty = 0
+    total = 0
+    max_count = 0
+
+    for image_id in image_ids:
+        records = list(predictions.get(image_id, []))
+        if image_id not in predictions:
+            missing += 1
+        if not records:
+            empty += 1
+        if len(records) > max_predictions_per_image:
+            issues.append(
+                PredictionSafetyIssue(
+                    image_id=image_id,
+                    reason="too_many_predictions",
+                    detail=f"{len(records)} > {max_predictions_per_image}",
+                )
+            )
+        max_count = max(max_count, len(records))
+        total += len(records)
+        for record in records:
+            if not 0 <= record.class_id < num_classes:
+                issues.append(
+                    PredictionSafetyIssue(
+                        image_id=image_id,
+                        reason="invalid_class_id",
+                        detail=str(record.class_id),
+                    )
+                )
+                continue
+            class_counts[record.class_id] += 1
+            if record.confidence is None:
+                issues.append(
+                    PredictionSafetyIssue(
+                        image_id=image_id,
+                        reason="missing_confidence",
+                        detail=str(record.class_id),
+                    )
+                )
+            else:
+                confidences.append(record.confidence)
+                if not 0.0 <= record.confidence <= 1.0:
+                    issues.append(
+                        PredictionSafetyIssue(
+                            image_id=image_id,
+                            reason="confidence_out_of_range",
+                            detail=str(record.confidence),
+                        )
+                    )
+
+    return PredictionSafetyReport(
+        valid=not issues,
+        image_count=len(image_ids),
+        missing_image_count=missing,
+        empty_image_count=empty,
+        prediction_count=total,
+        max_predictions_per_image=max_count,
+        class_counts=class_counts,
+        confidence_min=min(confidences) if confidences else None,
+        confidence_max=max(confidences) if confidences else None,
+        issues=tuple(issues),
+    )
 
 
 def xywh_to_xyxy(label: DetectionLabel) -> BoxXYXY:

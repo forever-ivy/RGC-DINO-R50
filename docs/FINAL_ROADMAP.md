@@ -1,9 +1,10 @@
 # Co-DETR + InternImage-L 高上限冲榜路线（2×RTX 3090）
 
-> 更新日期：2026-06-20
-> 当前线上最佳：**Co-DETR + InternImage-L continue epoch20，48.335**（strict final-TXT fold0 val mAP 0.413322）。
-> 目标：在竞赛规则内，坚持已线上验证的 **Co-DETR InternImage-L continuation** 作为当前主冲榜路线；RGC-DINO/R50/Swin-L 退为历史基线或对照线，IR/Depth reliability-gated fusion 作为下一阶段迁移提分方向。
-> 硬件：2×RTX 3090（24GB×2）。不怕训练时间长，但必须有显存策略、验证门禁和提交纪律。
+> 更新日期：2026-06-22
+> 当前线上最佳：**Co-DETR + InternImage-L fresh epoch7 + class thresholds，48.727**（strict final-TXT fold0 val mAP `0.4262677082771047`，hard-val `0.28694971837472955`）。
+> 对手参考：公开项目 `urban-visual-recognition` 的 **YOLO11M + RGB-guided-RDT + class-wise threshold** 已达 50.8190；其价值是后处理、验证体系和 RGB 主导三模态引导经验，不是替换当前主线或复用其权重。
+> 目标：在竞赛规则内，坚持已线上验证的 **Co-DETR InternImage-L fresh/continuation** 作为当前主冲榜路线；吸收对手经验，继续补齐高分辨率-NMS sweet spot / hard validation / prediction diagnostics，再推进 train-all 和 IR/Depth reliability-gated fusion。
+> 硬件：2×RTX 3090（24GB×2）。不怕训练时间长，但必须有显存策略、验证门禁、后处理门禁和提交纪律。
 
 ---
 
@@ -17,6 +18,7 @@
 - **不做简单投票/平均 ensemble**；最终提交优先是一个强单模型，允许合法的单模型 TTA/切图推理，但必须经验证集证明。
 - **只提交完整 test-set ZIP**：1000 个根目录 `.txt`，带 checkpoint/config/git/split/hash/metric provenance。
 - **不再盲交低阈值、朴素 TTA 平均、弱 fold 融合**；这些在本项目历史中已经证明会掉分。
+- **不使用对手 release 权重、提交 ZIP 或对手训练产物**；可学习公开代码/报告中的思想，但本项目训练、推理、提交必须由本地合法流程生成。
 
 公开预训练权重（ImageNet/COCO/Objects365 等公开模型权重）可作为离线初始化使用，但必须记录来源、路径和加载报告。
 
@@ -30,18 +32,23 @@
 |---|---|
 | RGC-DINO-R50 baseline | fold0 单模型线上 45.044；已被 Co-DETR continue 超过，退为 fallback |
 | Co-DETR + InternImage-L first 12ep | epoch11 raw/strict local 约 0.325/0.324，线上 42.101；说明短训不足 |
-| Co-DETR + InternImage-L continue | epoch20 strict final-TXT local 0.413322，线上 **48.335**；当前主线 |
+| Co-DETR + InternImage-L continue epoch20 | strict final-TXT local 0.413322，线上 48.335；已被 fresh epoch7/class-threshold 版本超过 |
+| Co-DETR + InternImage-L fresh epoch7 raw | strict final-TXT local 0.426216676，hard-val 0.286884750，线上 48.6960；已被 class-threshold 版本超过 |
+| Co-DETR + InternImage-L fresh epoch7 + class thresholds | strict final-TXT local 0.426267708，hard-val 0.286949718，线上 **48.727**；当前 anchor |
+| 2026-06-22 high-res fine-tune | best strict final-TXT local 0.418843656，低于当前 anchor；不 promotion / 不提交 |
 | 低阈值调优 | 已失败，线上约 43.955 |
 | 朴素 TTA 平均 | 灾难性失败，约 34.872 |
 | 2-fold 融合 | 弱模型拖累，约 44.263 |
 | Swin-L 现有提交 | 不能作为架构上限判断；日志显示疑似权重加载/验证闭环问题 |
+| 对手 urban-visual-recognition | YOLO11M + RGB-guided-RDT + 1408 推理 + class-wise threshold，公开记录 50.8190；主要启发是 FP suppression / 后处理校准 / RGB 主导三模态引导 |
 
 ### 结论
 
-- **当前主线已经确定为 Co-DETR + InternImage-L continuation**：epoch20 已线上确认 48.335，高于老 RGC-DINO 45.044。
+- **当前主线已经确定为 Co-DETR + InternImage-L fresh/continuation**：fresh epoch7 + class thresholds 已线上确认 48.727，高于老 RGC-DINO 45.044、continue epoch20 48.335 和 raw fresh epoch7 48.6960。
 - **Swin-L/RGC-DINO/R50 不再作为主冲榜路线**：只保留为历史基线、故障回退或对照，不再默认占用磁盘保存大量 checkpoint。
-- **当前 best checkpoint 优先级最高**：`outputs/codetr/internimage_l_stage1_continue_ep24_fold0_20260620_0237/best_bbox_mAP_epoch_20.pth` 必须保留；后续候选必须 strict final-TXT mAP > 0.413322 且以 48.335 为线上基线。
-- **三模态 RGC 融合迁移是下一阶段提分，不是回退旧路线**：先在已验证的 Co-DETR InternImage-L 主线上继续 checkpoint selection、长训、train-all，再迁移 IR/Depth reliability-gated fusion。
+- **当前 best checkpoint 优先级最高**：`outputs/codetr/internimage_l_epoch20_fresh_ft8_fold0_20260621_epoch20_fresh_ft8_direct/best_bbox_mAP_epoch_7.pth` + class thresholds `[0.05, 0.02, 0.003, 0, 0, 0, 0, 0, 0, 0, 0, 0]` 是当前 anchor；后续候选必须 strict final-TXT mAP > `0.4262677082771047` 且以 48.727 为线上基线。
+- **三模态 RGC 融合迁移是下一阶段提分，不是回退旧路线**：先在已验证的 Co-DETR InternImage-L 主线上继续 checkpoint selection、后处理校准、高分辨率 sweet spot、hard validation，再迁移 IR/Depth reliability-gated fusion。
+- **对手 50.8190 经验要求我们继续做“后处理与验证升级”**：class-wise threshold 已给出小幅 positive；下一步应继续查清 NMS / image-side sweet spot / prediction distribution，而不是回到旧 epoch20 门槛。
 
 ---
 
@@ -259,6 +266,88 @@ augmentation:
 
 ---
 
+## Phase 3.5：对手经验吸收 / 后处理与验证升级（立即插入，1-4 天）
+
+**目标**：不改变当前强单模型主线，先吸收 `urban-visual-recognition` 的成功经验，把当前 Co-DETR InternImage-L checkpoint 的后处理、误检控制和验证可信度补齐。当前优先基于 fresh epoch7 + class-threshold anchor 继续 NMS / image-side / prediction diagnostics；epoch20 best 和 epoch24 仅作历史对照。
+
+### 背景事实
+
+对手公开项目的 50.8190 主要来自：
+
+```text
+YOLO11M + RGB-guided-RDT
++ 1408 推理 sweet spot
++ 更保守全局 conf
++ class-wise threshold（person003 等）
++ 提交前严格校验
+```
+
+其最可迁移经验不是 YOLO11M 本身，而是：
+
+1. 低阈值取候选后，用**类别级阈值**抑制低置信度 FP。
+2. 高分辨率存在 sweet spot；过高分辨率 + 极低 conf 会引入 FP 并掉分。
+3. 随机 validation 与平台存在分布差异，必须补 hard validation。
+4. RGB 主干保持主导，IR/Depth 只做可靠性引导；不要无脑强融合。
+
+详细复盘见 `docs/OPPONENT_URBAN_VISUAL_RECOGNITION_LESSONS.md`。
+
+### 必做任务
+
+1. **class-wise threshold 支持**
+   - 在 Co-DETR/DINO 推理链路中支持 `--class-score-thresholds thresholds.json`。
+   - 区分 `candidate_score_threshold` 与最终 per-class threshold。
+   - 支持先保留更多候选（例如每图 300），再 class-wise filter + class-wise NMS + top100。
+
+2. **validation raw prediction cache**
+   - 优先对当前 fresh epoch7 anchor 输出低阈值 validation raw predictions；epoch20 best / epoch24 仅作历史对照。
+   - 缓存字段至少包含：sample_id、class_id、score、box、image side、NMS setting、checkpoint。
+   - 后续 threshold sweep 不重复跑 GPU 推理。
+
+3. **class-wise threshold greedy sweep**
+   - 目标指标：strict final-TXT `mAP@50:95`。
+   - 可选目标：`mAP - penalty * boxes_per_image`，防止通过堆框虚高 validation。
+   - 输出：`thresholds.json`、class AP、class box counts、boxes/image、score histogram。
+
+4. **高分辨率 / NMS / threshold 联合 sweep**
+   - 候选：`image_max_side = 800 / 832 / 896 / 960`（按显存和速度调整）。
+   - 候选：`nms_iou = 0.55 / 0.65 / 0.75`。
+   - 候选：`candidate_score_threshold = 0.0005 / 0.001 / 0.0015 / 0.003`。
+   - 每个设置都必须记录 prediction count 和 top100 截断影响。
+
+5. **prediction diagnostics**
+   - 每类预测数量。
+   - 每类 score 分布。
+   - 每图框数分布。
+   - AP50/AP75/AP90 gap。
+   - small/medium/large AP。
+   - top100 截断前后被丢弃框的类别和分数。
+
+6. **hard validation**
+   - 在现有 grouped split 基础上额外标注 hard-val 子集，不替代原 fold。
+   - hard-val 覆盖：低光、夜间/弱光、小目标、遮挡、密集人群、深度无效、红外弱响应、稀有类。
+   - 后处理候选必须 normal val 提升且 hard-val 不崩，才进入 test ZIP。
+
+7. **RGB-guided-RDT 低成本 ablation**
+   - 不切换主线到 YOLO11M。
+   - 可实现可选预处理：`RGB * (0.85 + 0.30 * attention(IR_CLAHE, near_depth))`，仅作为 ablation 或 gate quality feature。
+   - 更推荐把 IR CLAHE saliency、depth valid near-depth saliency 加入 RGC gate 的质量统计，而不是直接替换 RGB 输入。
+
+### 通过标准
+
+- 至少一个 postprocess candidate 的 strict final-TXT mAP 超过 `0.4262677082771047`，且 prediction distribution 合理。
+- hard-val 不出现明显退化或极端框数膨胀。
+- class-wise threshold、image side、NMS、candidate/final box counts 写入 manifest / promotion metadata。
+- 若未超过当前 48.727 anchor，不提交，但保留诊断报告指导下一步微调/RGC fusion。
+
+### 禁止
+
+- 不用对手权重或提交包。
+- 不通过多次平台提交做单类别盲诊断。
+- 不复现“1536 + 极低 conf”式高 FP 策略。
+- 不做朴素 TTA 平均或弱模型融合。
+
+---
+
 ## Phase 4：高分辨率微调与小目标强化（1-2 周）
 
 **目标**：提升 mAP@50:95，特别是高 IoU 和小目标召回。
@@ -277,8 +366,8 @@ finetune:
 
 1. 高分辨率微调。
 2. validation 上测试 tile inference。
-3. class-wise threshold / NMS 搜索。
-4. top100 截断前做 score calibration。
+3. class-wise threshold / NMS 搜索（沿用 Phase 3.5 的 raw prediction cache 与 sweep 工具）。
+4. top100 截断前做 score calibration，并记录截断损失。
 
 ---
 
@@ -329,6 +418,7 @@ finetune:
 | Phase 1 | Co-DETR-R50 sanity | 1-3 天 | 低中 | 通常否 |
 | Phase 2 | Co-DETR + InternImage-L 低分辨率 | 3-7 天 | 中高 | 视 mAP |
 | Phase 3 | 主训练 50-72 epoch | 1-3 周 | 高 | 是 |
+| **Phase 3.5** | **对手经验吸收：class-wise threshold / hard-val / 高分辨率-NMS sweet spot** | **1-4 天** | **低中** | **是，若过门禁** |
 | Phase 4 | 高分辨率微调 | 1-2 周 | 高 | 是 |
 | Phase 5 | 多 fold + train-all | 1-3 周 | 高 | 是 |
 | Phase 6 | 单模型 TTA/切图/后处理 | 3-7 天 | 中 | 是 |
@@ -344,9 +434,12 @@ finetune:
 | 里程碑 | 目标 |
 |---|---|
 | Co-DETR-R50 sanity | 证明链路正确，不追求分数 |
-| Co-DETR + InternImage-L continue epoch20 | 已达成：strict mAP 0.413322，线上 48.335 |
-| 后续 continuation / longer train | 必须 strict final-TXT mAP > 0.413322 才允许提交 |
-| train-all / high-res / TTA / tile | 必须以线上 48.335 为 baseline，先 validation 证明再提交 |
+| Co-DETR + InternImage-L continue epoch20 | 已达成：strict mAP 0.413322，线上 48.335；已被 fresh epoch7 超过 |
+| Co-DETR + InternImage-L fresh epoch7 | 已达成：strict mAP 0.426216676，hard-val 0.286884750，线上 48.6960；已被 class-threshold 版本超过 |
+| Co-DETR + InternImage-L fresh epoch7 + class thresholds | 当前 anchor：strict mAP 0.426267708，hard-val 0.286949718，线上 48.727 |
+| 后续 continuation / longer train | 必须 strict final-TXT mAP > 0.426267708 且 hard-val 不崩才允许提交 |
+| class-wise threshold / NMS / high-res postprocess | 优先基于当前 fresh epoch7 + class-threshold anchor 执行；必须 strict final-TXT mAP > 0.426267708，prediction distribution 合理，hard-val 不崩；旧 eval_s768/s832/s896 因 `(1333, side)` 被 width cap 成同一 `1333×750` 输出，修正 s832 smoke strict 0.422748 仍低于 anchor |
+| train-all / high-res / TTA / tile | 必须以线上 48.727 为 baseline，先 validation + hard-val 证明再提交；2026-06-22 high-res fine-tune strict 0.418843656 已淘汰 |
 | IR/Depth RGC fusion 迁移 | 必须在 Co-DETR InternImage-L 主线上验证，不能回退旧 RGC-DINO 体系盲训 |
 
 ### 提交门槛
@@ -357,9 +450,11 @@ finetune:
 完整 test ZIP
 + manifest/hash/config/checkpoint/git commit
 + strict final-TXT validation mAP 证据
-+ Co-DETR InternImage-L 候选必须 strict mAP > 0.413322
-+ promotion metadata 的 leaderboard_baseline 必须 >= 48.335
++ Co-DETR InternImage-L 候选必须 strict mAP > 0.4262677082771047（当前 fresh epoch7 + class-threshold anchor）
++ promotion metadata 的 leaderboard_baseline 必须 >= 48.727
 + 预测数量/score 分布正常
++ class-wise threshold / NMS / image side / candidate box count 等后处理参数完整记录（如适用）
++ hard-val 或额外验证分布检查没有明显退化（如适用）
 + dry-run/leaderboard 确认链路正常
 + promotion reason 清晰
 ```
@@ -388,7 +483,8 @@ finetune:
 5. 写 `scripts/write_bsub_codetr_smoke.py`：只生成 LSF，不直接训练。
 6. 先跑 Co-DETR-R50 smoke。
 7. 再跑 Co-DETR + InternImage-L 640 低分辨率 12-18 epoch。
-8. 只有 local mAP、显存、预测分布都正常后，启动 50-72 epoch 主训练。
+8. 对当前 fresh epoch7 anchor 继续补 `class-wise threshold sweep`、`prediction diagnostics`、`high-res/NMS sweet spot` 和 `hard-val`；旧 epoch20/epoch24 仅作对照。
+9. 只有 local mAP、hard-val、显存、预测分布都正常后，启动 50-72 epoch 主训练、train-all 或其它高风险实验；已完成的 2026-06-22 high-res fine-tune strict 退步，不进入 test ZIP / promotion / 提交。
 
 ---
 
@@ -397,13 +493,14 @@ finetune:
 本项目当前主线正式调整为：
 
 ```text
-Co-DETR + InternImage-L continuation（当前已验证 epoch20）
+Co-DETR + InternImage-L continuation（当前已验证 fresh epoch7）
 → strict final-TXT sweep 选择 best checkpoint
-→ 以 48.335 / strict mAP 0.413322 作为新提交门槛
+→ 吸收对手经验：class-wise threshold / 高分辨率-NMS sweet spot / hard validation / prediction diagnostics
+→ 以 48.727 / strict mAP 0.4262677082771047 作为新提交门槛
 → 更长训练、高分辨率微调、train-all final single model
 → 合法单模型 TTA / tile inference / class-wise NMS
 → 在 Co-DETR InternImage-L 主线上迁移 RGB/IR/Depth reliability-gated fusion
 → 严格 promotion 后提交
 ```
 
-当前线上已验证最优是 `best_bbox_mAP_epoch_20.pth`，分数 48.335。旧 RGC-DINO/Swin/R50 路线不再作为主冲榜路线；其 checkpoint 可以清理以节省空间，只保留文档、日志、ranking、提交 ZIP/manifest 等复现实验证据。
+当前线上已验证最优是 fresh epoch7 checkpoint `outputs/codetr/internimage_l_epoch20_fresh_ft8_fold0_20260621_epoch20_fresh_ft8_direct/best_bbox_mAP_epoch_7.pth` + class thresholds，分数 48.727。旧 epoch20/48.335、raw fresh/48.6960、RGC-DINO/Swin/R50 路线都不再作为主冲榜 anchor；其 checkpoint 可以按需清理以节省空间，但需保留文档、日志、ranking、提交 ZIP/manifest 等复现实验证据。

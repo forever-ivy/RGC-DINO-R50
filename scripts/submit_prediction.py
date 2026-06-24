@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -20,7 +21,7 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC  # noqa: F401 - kept for external users
     from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.chrome.service import Service  # noqa: F401 - kept for external users
+    from selenium.webdriver.chrome.service import Service
 except ImportError:
     print("ERROR: selenium not installed. Run: pip install selenium", file=sys.stderr)
     sys.exit(1)
@@ -60,7 +61,11 @@ def setup_chrome_driver(
     if chrome_binary:
         chrome_options.binary_location = chrome_binary
 
-    driver = webdriver.Chrome(options=chrome_options)
+    chromedriver = os.environ.get('CHROMEDRIVER')
+    if chromedriver:
+        driver = webdriver.Chrome(service=Service(chromedriver), options=chrome_options)
+    else:
+        driver = webdriver.Chrome(options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
     return driver
@@ -292,6 +297,18 @@ def submit_prediction(
         result['status'] = STATUS_FATAL_ERROR
         result['message'] = f'Fatal error: {str(e)}'
         result['error'] = str(e)
+        try:
+            visible_text = driver.find_element(By.TAG_NAME, 'body').text
+            result['page_text_excerpt'] = visible_text[:1000]
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+            driver.save_screenshot(str(screenshot_path))
+            result['screenshot'] = str(screenshot_path)
+            print(f"Saved screenshot to {screenshot_path}")
+        except Exception:  # noqa: BLE001
+            pass
         print(f"✗ Fatal error: {e}", file=sys.stderr)
 
     return result

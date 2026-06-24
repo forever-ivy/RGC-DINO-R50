@@ -59,11 +59,11 @@ class CompetitionMonitor:
         self.state_file = output_dir / 'monitor_state.json'
         self.state = self.load_state()
         self.min_local_map_by_kind = {
-            # Current best verified Co-DETR candidate: 48.335 leaderboard score
-            # from strict final-TXT fold0 val mAP 0.4133222840328082.
-            'codetr_internimage_l': 0.4133222840328082,
-            'codetr_internimage_l_continue': 0.4133222840328082,
-            'codetr_internimage_l_fasttrack': 0.4133222840328082,
+            # Current best verified Co-DETR candidate: 48.727 leaderboard score
+            # from fresh epoch7 + class thresholds strict final-TXT fold0 val mAP 0.4262677082771047.
+            'codetr_internimage_l': 0.4262677082771047,
+            'codetr_internimage_l_continue': 0.4262677082771047,
+            'codetr_internimage_l_fasttrack': 0.4262677082771047,
         }
 
     def load_state(self) -> Dict:

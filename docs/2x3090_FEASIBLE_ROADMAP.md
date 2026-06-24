@@ -9,7 +9,7 @@
 
 **Co-DETR + InternImage-L continuation 已经是当前线上最高分主线。**
 
-它不是轻量路线，但已在 2×3090 上跑通并把线上分从 RGC-DINO baseline 45.044 提升到 48.335。后续继续沿这条路线做 checkpoint selection、长训、train-all、高分辨率/单模型后处理，以及再迁移 IR/Depth RGC fusion。
+它不是轻量路线，但已在 2×3090 上跑通并把线上分从 RGC-DINO baseline 45.044 提升到 48.335。对手 `urban-visual-recognition` 公开记录 50.8190，说明在继续长训之前，应先补齐 class-wise threshold、NMS/image-side sweet spot、hard validation 和 prediction diagnostics。后续继续沿 Co-DETR InternImage-L 做 checkpoint selection、后处理升级、长训、train-all、高分辨率/单模型后处理，以及再迁移 IR/Depth RGC fusion。
 
 在 2×3090 上的判断：
 
@@ -26,6 +26,7 @@
 ```text
 保留当前 Co-DETR + InternImage-L continue epoch20 best checkpoint
 → 后续 continuation/longer train 必须 strict mAP > 0.413322 才提交
+→ 立即插入 class-wise threshold / NMS-image-side sweet spot / hard-val / prediction diagnostics
 → 再做 train-all + 单模型 TTA/切图/后处理
 → 最后在 Co-DETR InternImage-L 主线上迁移 IR/Depth RGC fusion
 ```
@@ -189,6 +190,47 @@ augmentation:
 
 ---
 
+## Stage 2.5：后处理与验证升级（对手经验吸收）
+
+目标：在继续重 GPU 训练前，用现有 epoch20 best / epoch24 checkpoint 榨干后处理潜力，验证 48.335 是否主要受阈值、NMS、分辨率和 FP 控制限制。
+
+该阶段 GPU 成本主要是推理，不是长训；适合在 2×3090 上并行于训练监控进行。
+
+```yaml
+postprocess_sweep:
+  candidate_score_threshold: [0.0005, 0.001, 0.0015, 0.003]
+  image_max_side: [800, 832, 896, 960]
+  nms_iou_threshold: [0.55, 0.65, 0.75]
+  candidate_max_detections: 300
+  final_max_detections: 100
+  class_wise_threshold: greedy_on_validation
+validation:
+  metric: strict_final_txt_map50_95
+  required_reports:
+    - class_ap
+    - class_prediction_counts
+    - score_histogram
+    - boxes_per_image
+    - top100_truncation
+    - hard_val_replay
+```
+
+通过标准：
+
+- strict final-TXT mAP 超过 0.413322。
+- hard-val 不明显退化。
+- 每类预测数量和每图框数没有异常膨胀。
+- class thresholds、NMS、image side、候选框数量写入 manifest/promotion metadata。
+
+禁止：
+
+- 不用对手权重或提交包。
+- 不用 leaderboard 反复做单类别盲诊断。
+- 不复现“1536 + 极低 conf”式高 FP 策略。
+- 不做朴素 TTA 平均或弱模型融合。
+
+---
+
 ## Stage 3：高分辨率微调
 
 目标：提升高 IoU AP 和小目标召回。
@@ -255,6 +297,7 @@ finetune:
 | Stage 0 Co-DETR-R50 sanity | 1-3 天 | 低 |
 | Stage 1 InternImage-L 低分辨率 | 3-7 天 | 中高 |
 | Stage 2 主训练 | 1-3 周 | 高 |
+| **Stage 2.5 后处理与验证升级** | **1-4 天** | **低中** |
 | Stage 3 高分辨率微调 | 1-2 周 | 高 |
 | Stage 4 多 fold / train-all | 1-3 周 | 高 |
 | Stage 5 推理增强 | 3-7 天 | 中 |
@@ -276,8 +319,10 @@ finetune:
 6. split manifest
 7. local validation mAP
 8. prediction count / score distribution analysis
-9. promotion reason
-10. dry-run 成功
+9. class-wise thresholds / NMS / image side / candidate and final box counts（如适用）
+10. hard-val 或额外验证分布检查（如适用）
+11. promotion reason
+12. dry-run 成功
 ```
 
 没有以上证据，不进入 `outputs/submissions/` 自动监控目录。
@@ -305,6 +350,7 @@ finetune:
 ```text
 小模型 sanity
 → 大模型低分辨率验证
+→ 后处理与验证升级（class-wise threshold / hard-val / high-res-NMS sweet spot；当前 anchor 为 fresh epoch7 + class thresholds 48.727 / strict 0.426267708）
 → 长训主模型
 → 多 fold 证明
 → train-all final

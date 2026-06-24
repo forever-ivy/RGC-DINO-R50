@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class SubmissionManifest:
     split_manifest_sha256: str
     calibrator_version: str
     config_path: str
+    postprocess: dict[str, Any] | None = None
 
 
 def build_submission_manifest(
@@ -29,6 +31,7 @@ def build_submission_manifest(
     split_manifest_path: str | Path,
     calibrator_version: str,
     config_path: str | Path,
+    postprocess: dict[str, Any] | None = None,
 ) -> SubmissionManifest:
     zip_file = Path(zip_path)
     checkpoint_file = Path(checkpoint_path)
@@ -43,6 +46,7 @@ def build_submission_manifest(
         split_manifest_sha256=file_sha256(split_file),
         calibrator_version=calibrator_version,
         config_path=str(config_path),
+        postprocess=postprocess,
     )
 
 
