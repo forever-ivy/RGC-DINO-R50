@@ -12,7 +12,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from rgc_dino.postprocess import load_class_score_thresholds  # noqa: E402
+from rgc_dino.postprocess import load_class_allocation_config, load_class_score_thresholds  # noqa: E402
 from rgc_dino.submission_promotion import promote_submission_candidate  # noqa: E402
 
 
@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prediction-objects", type=int)
     parser.add_argument("--score-threshold", type=float)
     parser.add_argument("--class-score-thresholds", type=Path)
+    parser.add_argument("--class-allocation-config", type=Path)
     parser.add_argument("--candidate-score-threshold", type=float)
     parser.add_argument("--nms-iou-threshold", type=float)
     parser.add_argument("--pre-limit-per-image", type=int)
@@ -79,6 +80,15 @@ def main() -> int:
     if class_thresholds_path is None and conversion_summary is not None:
         raw_path = conversion_summary.get("class_score_thresholds_path")
         class_thresholds_path = Path(raw_path) if raw_path else None
+    class_allocation_config = (
+        load_class_allocation_config(args.class_allocation_config)._asdict()
+        if args.class_allocation_config is not None
+        else (conversion_summary or {}).get("class_allocation_config")
+    )
+    class_allocation_config_path = args.class_allocation_config
+    if class_allocation_config_path is None and conversion_summary is not None:
+        raw_path = conversion_summary.get("class_allocation_config_path")
+        class_allocation_config_path = Path(raw_path) if raw_path else None
     score_threshold = args.score_threshold
     if score_threshold is None and conversion_summary is not None:
         score_threshold = conversion_summary.get("score_threshold")
@@ -119,6 +129,8 @@ def main() -> int:
         score_threshold=score_threshold,
         class_score_thresholds_path=class_thresholds_path,
         class_score_thresholds=class_thresholds,
+        class_allocation_config_path=class_allocation_config_path,
+        class_allocation_config=class_allocation_config,
         candidate_score_threshold=candidate_score_threshold,
         nms_iou_threshold=nms_iou_threshold,
         pre_limit_per_image=args.pre_limit_per_image,

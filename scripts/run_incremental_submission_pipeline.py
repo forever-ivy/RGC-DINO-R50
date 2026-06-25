@@ -30,6 +30,8 @@ INFER = ROOT / "scripts" / "infer_rgc_dino.py"
 DEFAULT_TRAIN_ROOT = ROOT / "source" / "训练集"
 DEFAULT_TEST_ROOT = ROOT / "source" / "AIC2026_PHASE_1_1000"
 DEFAULT_LABELS = DEFAULT_TRAIN_ROOT / "labels"
+CURRENT_CODETR_STRICT_MAP = 0.4379615851682616
+CURRENT_LEADERBOARD_BASELINE = 50.353
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sweep-top-k", type=int, default=5)
     parser.add_argument("--skip-sweep", action="store_true")
     parser.add_argument("--require-improvement-over", type=float, default=0.0)
+    parser.add_argument("--baseline-val-map", type=float, default=CURRENT_CODETR_STRICT_MAP)
+    parser.add_argument("--leaderboard-baseline", type=float, default=CURRENT_LEADERBOARD_BASELINE)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--poll-interval", type=int, default=600)
     parser.add_argument("--auto-promote", action="store_true", help="Promote newly generated best ZIP into submissions dir")
@@ -234,14 +238,20 @@ def run_test_inference(
     return pred_dir, zip_path, manifest_path
 
 
-def should_promote(best: dict[str, Any], state: dict[str, Any], required_improvement: float) -> bool:
+def should_promote(
+    best: dict[str, Any],
+    state: dict[str, Any],
+    required_improvement: float,
+    baseline_val_map: float = 0.0,
+) -> bool:
     current_map = best.get("map_50_95")
     previous = state.get("best_local_map")
     if current_map is None:
         return False
-    if previous is None:
-        return True
-    return float(current_map) > float(previous) + required_improvement
+    required_baseline = float(baseline_val_map)
+    if previous is not None:
+        required_baseline = max(required_baseline, float(previous) + required_improvement)
+    return float(current_map) > required_baseline
 
 
 def run_once(args: argparse.Namespace) -> dict[str, Any]:
@@ -264,13 +274,18 @@ def run_once(args: argparse.Namespace) -> dict[str, Any]:
         save_state(state_path, state)
         return {"status": "no_successful_checkpoint", "ranking_path": str(ranking_path)}
 
-    if not should_promote(best, state, args.require_improvement_over):
+    if not should_promote(best, state, args.require_improvement_over, args.baseline_val_map):
         save_state(state_path, state)
+        previous = state.get('best_local_map')
+        required_baseline = float(args.baseline_val_map)
+        if previous is not None:
+            required_baseline = max(required_baseline, float(previous) + args.require_improvement_over)
         print(
-            f"Best new mAP {best.get('map_50_95')} did not exceed previous "
-            f"{state.get('best_local_map')} by {args.require_improvement_over}"
+            f"Best new mAP {best.get('map_50_95')} did not exceed required baseline "
+            f"{required_baseline} (previous={previous}, absolute_anchor={args.baseline_val_map})"
         )
-        return {"status": "not_improved", "best": best, "ranking_path": str(ranking_path)}
+        status = "below_current_anchor" if previous is None or float(args.baseline_val_map) >= required_baseline else "not_improved"
+        return {"status": status, "best": best, "ranking_path": str(ranking_path), "required_baseline": required_baseline}
 
     epoch = int(best["epoch"])
     checkpoint = args.train_dir / best["checkpoint"]
@@ -299,6 +314,7 @@ def run_once(args: argparse.Namespace) -> dict[str, Any]:
             submissions_dir=args.submissions_dir,
             reason=reason,
             local_map=best.get("map_50_95"),
+            leaderboard_baseline=args.leaderboard_baseline,
             force=args.force,
             manifest_path=manifest_path,
             dataset_root=args.dataset_root_test,

@@ -22,6 +22,18 @@ sys.path.insert(0, str(ROOT / "src"))
 from rgc_dino.submission_manifest import file_sha256  # noqa: E402
 
 
+CURRENT_CODETR_STRICT_MAP = 0.4379615851682616
+CURRENT_CODETR_HARD_VAL_MAP = 0.29545499238138817
+CODETR_GATE_KINDS = {
+    'codetr_internimage_l',
+    'codetr_internimage_l_continue',
+    'codetr_internimage_l_fasttrack',
+    'inference_sweep_best',
+    'checkpoint_best',
+}
+HARD_VAL_FAILURE_STATUSES = {'fail', 'failed', 'failure', 'hard_val_fail', 'regressed'}
+
+
 @dataclass(frozen=True)
 class CandidateDecision:
     zip_path: Path
@@ -59,11 +71,11 @@ class CompetitionMonitor:
         self.state_file = output_dir / 'monitor_state.json'
         self.state = self.load_state()
         self.min_local_map_by_kind = {
-            # Current best verified Co-DETR candidate: 48.727 leaderboard score
-            # from fresh epoch7 + class thresholds strict final-TXT fold0 val mAP 0.4262677082771047.
-            'codetr_internimage_l': 0.4262677082771047,
-            'codetr_internimage_l_continue': 0.4262677082771047,
-            'codetr_internimage_l_fasttrack': 0.4262677082771047,
+            # Current best verified Co-DETR candidate: 50.353 leaderboard score
+            # from GPU1 load-from epoch6 + legal top100 allocation (person0865/light10625/uav0825/boat003),
+            # strict final-TXT fold0 val mAP 0.4379615851682616.
+            kind: CURRENT_CODETR_STRICT_MAP
+            for kind in CODETR_GATE_KINDS
         }
 
     def load_state(self) -> Dict:
@@ -339,6 +351,23 @@ class CompetitionMonitor:
                         )
                 except (TypeError, ValueError):
                     return CandidateDecision(zip_path, metadata_path, sha, False, 'invalid local mAP in promotion metadata', metadata)
+                hard_val_status = str(metadata.get('hard_val_status') or '').strip().lower()
+                if hard_val_status in HARD_VAL_FAILURE_STATUSES:
+                    return CandidateDecision(zip_path, metadata_path, sha, False, f'hard-val status is failing: {hard_val_status}', metadata)
+                hard_val_map = metadata.get('hard_val_map_50_95')
+                if hard_val_map is not None:
+                    try:
+                        if float(hard_val_map) + 1e-12 < CURRENT_CODETR_HARD_VAL_MAP:
+                            return CandidateDecision(
+                                zip_path,
+                                metadata_path,
+                                sha,
+                                False,
+                                f'hard-val mAP {hard_val_map} is below current gate {CURRENT_CODETR_HARD_VAL_MAP:.6f}',
+                                metadata,
+                            )
+                    except (TypeError, ValueError):
+                        return CandidateDecision(zip_path, metadata_path, sha, False, 'invalid hard-val mAP in promotion metadata', metadata)
         manifest_path = metadata.get('manifest_path') if metadata else None
         if self.require_promotion and (not manifest_path or not Path(manifest_path).exists()):
             return CandidateDecision(zip_path, metadata_path, sha, False, 'missing submission manifest', metadata)

@@ -55,6 +55,37 @@ class SubmissionPromotionTest(unittest.TestCase):
             self.assertEqual(sidecar["score_threshold"], 0.05)
             self.assertEqual(sidecar["submission_guard"]["expected_txt_count"], 1)
 
+    def test_promote_submission_candidate_records_class_allocation_and_hard_val_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            candidate = root / "codetr_alloc_candidate.zip"
+            write_candidate_zip(candidate)
+            manifest = write_manifest_for(candidate)
+            submissions = root / "submissions"
+            allocation = {"score_weights": [0.85] + [1.0] * 7 + [1.05] + [1.0] * 3}
+
+            result = promote_submission_candidate(
+                candidate_zip=candidate,
+                submissions_dir=submissions,
+                reason="allocation candidate with hard-val evidence",
+                local_map=0.438,
+                leaderboard_baseline=50.353,
+                manifest_path=manifest,
+                expected_ids=["sample_0001"],
+                class_allocation_config_path=root / "allocation.json",
+                class_allocation_config=allocation,
+                hard_val_status="pass",
+                hard_val_map_50_95=0.296,
+                hard_val_report_path=root / "hard_val_report.json",
+            )
+
+            sidecar = json.loads(result.metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(sidecar["class_allocation_config_path"], str(root / "allocation.json"))
+            self.assertEqual(sidecar["class_allocation_config"], allocation)
+            self.assertEqual(sidecar["hard_val_status"], "pass")
+            self.assertEqual(sidecar["hard_val_map_50_95"], 0.296)
+            self.assertEqual(sidecar["hard_val_report_path"], str(root / "hard_val_report.json"))
+
     def test_promote_submission_candidate_rejects_validation_or_debug_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -3,7 +3,9 @@
 
 The generated script runs one GPU job, evaluates the resulting checkpoint under
 final-TXT validation, and stops before test inference unless the strict local
-metric beats the supplied baseline.  This writer does not submit the job.
+metric beats the supplied baseline.  The default baseline is the current
+Co-DETR InternImage-L GPU1 load-from epoch6 top100 allocation anchor
+(50.353 leaderboard / 0.437940274 strict mAP).  This writer does not submit the job.
 """
 
 from __future__ import annotations
@@ -18,8 +20,8 @@ DEFAULT_CONFIG = ROOT / "configs" / "codetr_internimage_l_mm_config.py"
 DEFAULT_BASE_CKPT = ROOT / "outputs" / "codetr" / "internimage_l_epoch20_fresh_ft8_fold0_20260621_epoch20_fresh_ft8_direct" / "best_bbox_mAP_epoch_7.pth"
 DEFAULT_WORK_DIR = ROOT / "outputs" / "codetr" / "internimage_l_continue_from_fresh_ep7"
 DEFAULT_ENV_PREFIX = Path("/data1/liuxuan/envs/codetr")
-DEFAULT_BASELINE = 0.4262677082771047
-DEFAULT_LEADERBOARD_BASELINE = 48.727
+DEFAULT_BASELINE = 0.4379615851682616
+DEFAULT_LEADERBOARD_BASELINE = 50.353
 
 
 def parse_args() -> argparse.Namespace:

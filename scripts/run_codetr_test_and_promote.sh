@@ -96,7 +96,7 @@ PROMOTE_ARGS=(
   --submissions-dir outputs/submissions
   --reason "$REASON"
   --local-map "$VAL_MAP"
-  --leaderboard-baseline "${LEADERBOARD_BASELINE:-48.727}"
+  --leaderboard-baseline "${LEADERBOARD_BASELINE:-50.353}"
   --manifest-path "${ZIP_PATH%.zip}.manifest.json"
   --candidate-kind "$CANDIDATE_KIND"
   --checkpoint-path "$CHECKPOINT"
@@ -113,6 +113,9 @@ PROMOTE_ARGS=(
 )
 if [ -n "$CLASS_SCORE_THRESHOLDS" ]; then
   PROMOTE_ARGS+=(--class-score-thresholds "$CLASS_SCORE_THRESHOLDS")
+fi
+if [ -n "$CLASS_ALLOCATION_CONFIG" ]; then
+  PROMOTE_ARGS+=(--class-allocation-config "$CLASS_ALLOCATION_CONFIG")
 fi
 if [ -n "$NMS_IOU_THRESHOLD" ]; then
   PROMOTE_ARGS+=(--nms-iou-threshold "$NMS_IOU_THRESHOLD")

@@ -350,7 +350,7 @@ finetune:
 ```text
 小模型 sanity
 → 大模型低分辨率验证
-→ 后处理与验证升级（class-wise threshold / hard-val / high-res-NMS sweet spot；当前 anchor 为 fresh epoch7 + class thresholds 48.727 / strict 0.426267708）
+→ 后处理与验证升级（class-wise threshold / top100 allocation / hard-val / high-res-NMS sweet spot；当前 anchor 为 GPU1 ep6 person0865/light10625/uav0825/boat003 50.353 / strict 0.437961585）
 → 长训主模型
 → 多 fold 证明
 → train-all final

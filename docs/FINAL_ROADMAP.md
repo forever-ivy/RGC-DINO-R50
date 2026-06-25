@@ -1,9 +1,9 @@
 # Co-DETR + InternImage-L 高上限冲榜路线（2×RTX 3090）
 
 > 更新日期：2026-06-22
-> 当前线上最佳：**Co-DETR + InternImage-L fresh epoch7 + class thresholds，48.727**（strict final-TXT fold0 val mAP `0.4262677082771047`，hard-val `0.28694971837472955`）。
+> 当前线上最佳：**Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003，50.353**（strict final-TXT fold0 val mAP `0.4379615851682616`，hard-val `0.29545499238138817`）。
 > 对手参考：公开项目 `urban-visual-recognition` 的 **YOLO11M + RGB-guided-RDT + class-wise threshold** 已达 50.8190；其价值是后处理、验证体系和 RGB 主导三模态引导经验，不是替换当前主线或复用其权重。
-> 目标：在竞赛规则内，坚持已线上验证的 **Co-DETR InternImage-L fresh/continuation** 作为当前主冲榜路线；吸收对手经验，继续补齐高分辨率-NMS sweet spot / hard validation / prediction diagnostics，再推进 train-all 和 IR/Depth reliability-gated fusion。
+> 目标：在竞赛规则内，坚持已线上验证的 **Co-DETR InternImage-L fresh/continuation + legal top100 allocation** 作为当前主冲榜路线；吸收对手经验，继续围绕当前 winner 补齐高分辨率-NMS sweet spot / hard validation / prediction diagnostics，再推进 train-all 和 IR/Depth reliability-gated fusion。
 > 硬件：2×RTX 3090（24GB×2）。不怕训练时间长，但必须有显存策略、验证门禁、后处理门禁和提交纪律。
 
 ---
@@ -34,7 +34,9 @@
 | Co-DETR + InternImage-L first 12ep | epoch11 raw/strict local 约 0.325/0.324，线上 42.101；说明短训不足 |
 | Co-DETR + InternImage-L continue epoch20 | strict final-TXT local 0.413322，线上 48.335；已被 fresh epoch7/class-threshold 版本超过 |
 | Co-DETR + InternImage-L fresh epoch7 raw | strict final-TXT local 0.426216676，hard-val 0.286884750，线上 48.6960；已被 class-threshold 版本超过 |
-| Co-DETR + InternImage-L fresh epoch7 + class thresholds | strict final-TXT local 0.426267708，hard-val 0.286949718，线上 **48.727**；当前 anchor |
+| Co-DETR + InternImage-L fresh epoch7 + class thresholds | strict final-TXT local 0.426267708，hard-val 0.286949718，线上 48.727；历史 anchor，已被 GPU1 ep6 allocation 超过 |
+| Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person085/light105 | strict final-TXT local 0.437940274，hard-val 0.295439715，线上 50.349；历史 anchor，已被 person0865/light10625/uav0825/boat003 超过 |
+| Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003 | strict final-TXT local 0.437961585，hard-val 0.295454992，线上 **50.353**；当前 anchor |
 | 2026-06-22 high-res fine-tune | best strict final-TXT local 0.418843656，低于当前 anchor；不 promotion / 不提交 |
 | 低阈值调优 | 已失败，线上约 43.955 |
 | 朴素 TTA 平均 | 灾难性失败，约 34.872 |
@@ -44,11 +46,11 @@
 
 ### 结论
 
-- **当前主线已经确定为 Co-DETR + InternImage-L fresh/continuation**：fresh epoch7 + class thresholds 已线上确认 48.727，高于老 RGC-DINO 45.044、continue epoch20 48.335 和 raw fresh epoch7 48.6960。
+- **当前主线已经确定为 Co-DETR + InternImage-L fresh/continuation + legal top100 allocation**：GPU1 load-from epoch6 + person0865/light10625/uav0825/boat003 已线上确认 50.353，高于老 RGC-DINO 45.044、continue epoch20 48.335、raw fresh epoch7 48.6960 和 fresh epoch7 + class thresholds 48.727、person085/light105 50.349。
 - **Swin-L/RGC-DINO/R50 不再作为主冲榜路线**：只保留为历史基线、故障回退或对照，不再默认占用磁盘保存大量 checkpoint。
-- **当前 best checkpoint 优先级最高**：`outputs/codetr/internimage_l_epoch20_fresh_ft8_fold0_20260621_epoch20_fresh_ft8_direct/best_bbox_mAP_epoch_7.pth` + class thresholds `[0.05, 0.02, 0.003, 0, 0, 0, 0, 0, 0, 0, 0, 0]` 是当前 anchor；后续候选必须 strict final-TXT mAP > `0.4262677082771047` 且以 48.727 为线上基线。
+- **当前 best checkpoint/recipe 优先级最高**：`outputs/codetr/internimage_l_fresh_ep7_loadfrom_gpu1_20260624/best_bbox_mAP_epoch_6.pth` + class thresholds + legal top100 allocation person0865/light10625/uav0825/boat003 是当前 anchor；后续候选必须 strict final-TXT mAP > `0.4379615851682616` 且以 50.353 为线上基线。
 - **三模态 RGC 融合迁移是下一阶段提分，不是回退旧路线**：先在已验证的 Co-DETR InternImage-L 主线上继续 checkpoint selection、后处理校准、高分辨率 sweet spot、hard validation，再迁移 IR/Depth reliability-gated fusion。
-- **对手 50.8190 经验要求我们继续做“后处理与验证升级”**：class-wise threshold 已给出小幅 positive；下一步应继续查清 NMS / image-side sweet spot / prediction distribution，而不是回到旧 epoch20 门槛。
+- **对手 50.8190 经验要求我们继续做“后处理与验证升级”**：class-wise threshold 与 top100 allocation 均已给出 positive；下一步应围绕当前 winner 继续查清 NMS / image-side sweet spot / prediction distribution，而不是回到旧 48.727 门槛。
 
 ---
 
@@ -268,7 +270,7 @@ augmentation:
 
 ## Phase 3.5：对手经验吸收 / 后处理与验证升级（立即插入，1-4 天）
 
-**目标**：不改变当前强单模型主线，先吸收 `urban-visual-recognition` 的成功经验，把当前 Co-DETR InternImage-L checkpoint 的后处理、误检控制和验证可信度补齐。当前优先基于 fresh epoch7 + class-threshold anchor 继续 NMS / image-side / prediction diagnostics；epoch20 best 和 epoch24 仅作历史对照。
+**目标**：不改变当前强单模型主线，先吸收 `urban-visual-recognition` 的成功经验，把当前 Co-DETR InternImage-L checkpoint 的后处理、误检控制和验证可信度补齐。当前优先基于 GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003 anchor 继续 class-wise threshold / allocation / NMS / image-side / prediction diagnostics；48.727 fresh epoch7 + class-threshold、epoch20 best 和 epoch24 仅作历史对照。
 
 ### 背景事实
 
@@ -334,10 +336,10 @@ YOLO11M + RGB-guided-RDT
 
 ### 通过标准
 
-- 至少一个 postprocess candidate 的 strict final-TXT mAP 超过 `0.4262677082771047`，且 prediction distribution 合理。
-- hard-val 不出现明显退化或极端框数膨胀。
-- class-wise threshold、image side、NMS、candidate/final box counts 写入 manifest / promotion metadata。
-- 若未超过当前 48.727 anchor，不提交，但保留诊断报告指导下一步微调/RGC fusion。
+- 至少一个 postprocess candidate 的 strict final-TXT mAP 超过 `0.4379615851682616`，且 prediction distribution 合理。
+- hard-val 不低于当前 `0.29545499238138817` 或至少不出现明显退化/极端框数膨胀。
+- class-wise threshold、top100 allocation、image side、NMS、candidate/final box counts 写入 manifest / promotion metadata。
+- 若未超过当前 50.353 anchor，不提交，但保留诊断报告指导下一步微调/RGC fusion。
 
 ### 禁止
 
@@ -436,10 +438,12 @@ finetune:
 | Co-DETR-R50 sanity | 证明链路正确，不追求分数 |
 | Co-DETR + InternImage-L continue epoch20 | 已达成：strict mAP 0.413322，线上 48.335；已被 fresh epoch7 超过 |
 | Co-DETR + InternImage-L fresh epoch7 | 已达成：strict mAP 0.426216676，hard-val 0.286884750，线上 48.6960；已被 class-threshold 版本超过 |
-| Co-DETR + InternImage-L fresh epoch7 + class thresholds | 当前 anchor：strict mAP 0.426267708，hard-val 0.286949718，线上 48.727 |
-| 后续 continuation / longer train | 必须 strict final-TXT mAP > 0.426267708 且 hard-val 不崩才允许提交 |
-| class-wise threshold / NMS / high-res postprocess | 优先基于当前 fresh epoch7 + class-threshold anchor 执行；必须 strict final-TXT mAP > 0.426267708，prediction distribution 合理，hard-val 不崩；旧 eval_s768/s832/s896 因 `(1333, side)` 被 width cap 成同一 `1333×750` 输出，修正 s832 smoke strict 0.422748 仍低于 anchor |
-| train-all / high-res / TTA / tile | 必须以线上 48.727 为 baseline，先 validation + hard-val 证明再提交；2026-06-22 high-res fine-tune strict 0.418843656 已淘汰 |
+| Co-DETR + InternImage-L fresh epoch7 + class thresholds | 历史 anchor：strict mAP 0.426267708，hard-val 0.286949718，线上 48.727；已被 GPU1 ep6 allocation 超过 |
+| Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person085/light105 | 历史 anchor：strict mAP 0.437940274，hard-val 0.295439715，线上 50.349；已被 person0865/light10625/uav0825/boat003 超过 |
+| Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003 | 当前 anchor：strict mAP 0.437961585，hard-val 0.295454992，线上 50.353 |
+| 后续 continuation / longer train | 必须 strict final-TXT mAP > 0.437940274 且 hard-val 不崩才允许提交 |
+| class-wise threshold / NMS / high-res postprocess | 优先基于当前 GPU1 ep6 person085/light105 anchor 执行；必须 strict final-TXT mAP > 0.437940274，prediction distribution 合理，hard-val 不崩；旧 eval_s768/s832/s896 因 `(1333, side)` 被 width cap 成同一 `1333×750` 输出，修正 s832 smoke strict 0.422748 仍低于当前 anchor |
+| train-all / high-res / TTA / tile | 必须以线上 50.353 为 baseline，先 validation + hard-val 证明再提交；2026-06-22 high-res fine-tune strict 0.418843656 已淘汰 |
 | IR/Depth RGC fusion 迁移 | 必须在 Co-DETR InternImage-L 主线上验证，不能回退旧 RGC-DINO 体系盲训 |
 
 ### 提交门槛
@@ -450,8 +454,8 @@ finetune:
 完整 test ZIP
 + manifest/hash/config/checkpoint/git commit
 + strict final-TXT validation mAP 证据
-+ Co-DETR InternImage-L 候选必须 strict mAP > 0.4262677082771047（当前 fresh epoch7 + class-threshold anchor）
-+ promotion metadata 的 leaderboard_baseline 必须 >= 48.727
++ Co-DETR InternImage-L 候选必须 strict mAP > 0.4379615851682616（当前 GPU1 ep6 + top100 allocation person0865/light10625/uav0825/boat003 anchor）
++ promotion metadata 的 leaderboard_baseline 必须 >= 50.353
 + 预测数量/score 分布正常
 + class-wise threshold / NMS / image side / candidate box count 等后处理参数完整记录（如适用）
 + hard-val 或额外验证分布检查没有明显退化（如适用）
@@ -496,11 +500,11 @@ finetune:
 Co-DETR + InternImage-L continuation（当前已验证 fresh epoch7）
 → strict final-TXT sweep 选择 best checkpoint
 → 吸收对手经验：class-wise threshold / 高分辨率-NMS sweet spot / hard validation / prediction diagnostics
-→ 以 48.727 / strict mAP 0.4262677082771047 作为新提交门槛
+→ 以 50.353 / strict mAP 0.4379615851682616 作为新提交门槛
 → 更长训练、高分辨率微调、train-all final single model
 → 合法单模型 TTA / tile inference / class-wise NMS
 → 在 Co-DETR InternImage-L 主线上迁移 RGB/IR/Depth reliability-gated fusion
 → 严格 promotion 后提交
 ```
 
-当前线上已验证最优是 fresh epoch7 checkpoint `outputs/codetr/internimage_l_epoch20_fresh_ft8_fold0_20260621_epoch20_fresh_ft8_direct/best_bbox_mAP_epoch_7.pth` + class thresholds，分数 48.727。旧 epoch20/48.335、raw fresh/48.6960、RGC-DINO/Swin/R50 路线都不再作为主冲榜 anchor；其 checkpoint 可以按需清理以节省空间，但需保留文档、日志、ranking、提交 ZIP/manifest 等复现实验证据。
+当前线上已验证最优是 GPU1 load-from epoch6 checkpoint `outputs/codetr/internimage_l_fresh_ep7_loadfrom_gpu1_20260624/best_bbox_mAP_epoch_6.pth` + class thresholds + legal top100 allocation person0865/light10625/uav0825/boat003，分数 50.353。旧 epoch20/48.335、raw fresh/48.6960、fresh epoch7 + class thresholds/48.727、person085/light105/50.349、RGC-DINO/Swin/R50 路线都不再作为主冲榜 anchor；其 checkpoint 可以按需清理以节省空间，但需保留文档、日志、ranking、提交 ZIP/manifest 等复现实验证据。

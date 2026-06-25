@@ -1,7 +1,7 @@
 # RGC-DINO 项目文档导航
 
 > 面向城市场景视觉多模态目标检测竞赛  
-> 当前状态：线上最佳已从 RGC-DINO-R50 baseline 45.044、Co-DETR + InternImage-L continue epoch20 的 48.335、fresh epoch7 raw 的 48.6960，提升到 **Co-DETR + InternImage-L fresh epoch7 + class thresholds 的 48.727**。2026-06-22 train-time high-res fine-tune 已完成但 strict mAP 退步，未进入 test ZIP / promotion / 提交；后续主冲榜路线继续以 48.727 class-threshold anchor 为门槛，保留 **class-wise threshold / hard validation / prediction diagnostics** 作为候选筛选体系。
+> 当前状态：线上最佳已从 RGC-DINO-R50 baseline 45.044、Co-DETR + InternImage-L continue epoch20 的 48.335、fresh epoch7 raw 的 48.6960、fresh epoch7 + class thresholds 的 48.727，提升到 **Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003 的 50.353**。2026-06-25 当前候选 strict final-TXT mAP `0.4379615851682616`、hard-val `0.29545499238138817`；后续主冲榜路线继续以 50.353 / strict 0.437961585 为门槛，保留 **class-wise threshold / top100 allocation / hard validation / prediction diagnostics** 作为候选筛选体系。
 
 ---
 
@@ -10,10 +10,10 @@
 **主线文档**：[FINAL_ROADMAP.md](FINAL_ROADMAP.md)
 
 - 硬件：2×RTX 3090（24GB×2）
-- 当前线上最佳：Co-DETR + InternImage-L fresh epoch7 + class thresholds，**48.727**（strict final-TXT mAP `0.4262677082771047`，hard-val `0.28694971837472955`）。
-- 当前主线：坚持已验证的 Co-DETR InternImage-L continuation/checkpoint-selection 路线，不改道到 YOLO。
-- 最新状态：2026-06-22 high-res fine-tune strict best `0.4188436556179077`，低于 fresh epoch7 anchor；hard-val `0.29068978363886794` 小幅高于 baseline，但未过 strict promotion 门槛。
-- 立即插入：吸收对手 50.8190 经验，先做 class-wise threshold、NMS/image-side sweet spot、hard validation、prediction diagnostics。
+- 当前线上最佳：Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003，**50.353**（strict final-TXT mAP `0.4379615851682616`，hard-val `0.29545499238138817`）。
+- 当前主线：坚持已验证的 Co-DETR InternImage-L continuation/checkpoint-selection + top100 allocation 路线，不改道到 YOLO。
+- 最新状态：2026-06-25 GPU1 load-from epoch6 候选通过 person weight 0.865、light allocation weight 1.0625、uav weight 0.825、boat threshold 0.03，把线上从 50.349 推到 50.353；旧 50.349 person085/light105 与 48.727 fresh epoch7 + class-threshold anchor 退为历史基线。
+- 立即插入：吸收对手 50.8190 经验，围绕当前 50.353 winner 做 class-wise threshold、top100 allocation、NMS/image-side sweet spot、hard validation、prediction diagnostics。
 - 下一阶段提分：在 Co-DETR InternImage-L 主线和后处理门禁稳定后，再迁移 IR/Depth reliability-gated residual fusion。
 - 原则：强单模型优先，strict final-TXT validation + hard-val/预测分布过门禁后才提交。
 
@@ -93,8 +93,10 @@
 | Swin-L 尝试 | 退为对照/复盘 | 不作为上限判断 | 疑似权重/评估闭环问题 |
 | Co-DETR + InternImage-L continue epoch20 | 已完成/被 fresh epoch7 超过 | 48.335 | strict final-TXT mAP 0.413322，旧 Co-DETR anchor |
 | Co-DETR + InternImage-L fresh epoch7 | 已完成/被 class-threshold 版本超过 | 48.6960 | strict final-TXT mAP 0.426216676，hard-val 0.286884750，旧 raw fresh anchor |
-| **Co-DETR + InternImage-L fresh epoch7 + class thresholds** | **当前主线/线上最佳** | **48.727** | strict final-TXT mAP 0.426267708，hard-val 0.286949718；class thresholds `[0.05,0.02,0.003,0,...]` |
-| Co-DETR fresh epoch7 corrected image-side s832 smoke | 已完成/诊断，不提交 | 不提交 | 旧 s768/s832/s896 因 1333 width cap 实际都 resize 到 1333×750；修正 s832 `(1479,832)` 后 results hash 已变化，但 strict 0.422748 < anchor 0.426267708，hard-val 0.293758 小幅更好 |
+| Co-DETR + InternImage-L fresh epoch7 + class thresholds | 已完成/历史 anchor | 48.727 | strict final-TXT mAP 0.426267708，hard-val 0.286949718；class thresholds `[0.05,0.02,0.003,0,...]`，已被 GPU1 ep6 allocation 超过 |
+| Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person085/light105 | 已完成/历史 anchor | 50.349 | strict final-TXT mAP 0.437940274，hard-val 0.295439715；已被 person0865/light10625/uav0825/boat003 超过 |
+| **Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003** | **当前主线/线上最佳** | **50.353** | strict final-TXT mAP 0.437961585，hard-val 0.295454992；完整 1000-file ZIP，max detections 100 |
+| Co-DETR fresh epoch7 corrected image-side s832 smoke | 已完成/诊断，不提交 | 不提交 | 旧 s768/s832/s896 因 1333 width cap 实际都 resize 到 1333×750；修正 s832 `(1479,832)` 后 results hash 已变化，但 strict 0.422748 < 当前 50.353 anchor，hard-val 0.293758 小幅更好 |
 | Co-DETR fresh epoch7 high-res fine-tune | 已完成/不 promotion | 不提交 | best strict 0.418843656 < 0.426216676；hard-val 0.290689784 小幅更好但主指标退步 |
 | 对手 urban-visual-recognition | 外部公开参考/不作为本项目产物 | 50.8190 | YOLO11M + RGB-guided-RDT + class-wise threshold；只学习经验，不使用其权重/提交包 |
 
@@ -104,10 +106,10 @@
 
 ### 已验证经验
 
-1. Co-DETR + InternImage-L continuation 已在线上验证超过老 RGC-DINO baseline：48.727 vs 45.044，正式作为当前主线；当前决策 anchor 是 fresh epoch7 + class thresholds strict mAP `0.4262677082771047`。
+1. Co-DETR + InternImage-L continuation 已在线上验证超过老 RGC-DINO baseline：50.353 vs 45.044，正式作为当前主线；当前决策 anchor 是 GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003 strict mAP `0.4379615851682616`。
 2. 当前已上线高分仍是 RGB-only Co-DETR；IR/Depth/RGC 三模态融合是下一阶段提分方向，不再先退回旧 RGC-DINO 主线。
 3. 错误融合比不融合更糟；不能把多模型/多尺度输出简单平均。
-4. 对手 50.8190 说明，class-wise threshold、误检抑制和高分辨率 sweet spot 在 48-51 分段可能贡献接近 1 分，应先榨干当前强 checkpoint。
+4. 对手 50.8190 说明，class-wise threshold、误检抑制、top100 allocation 和高分辨率 sweet spot 在 50 分段仍可能贡献小幅收益，应先榨干当前强 checkpoint。
 
 ### 当前主线原则
 
@@ -116,7 +118,7 @@
 → Co-DETR + InternImage-L continuation 作为当前主线
 → checkpoint/strict final-TXT sweep 选择 best epoch（当前 fresh epoch7 + class thresholds）
 → 继续执行 NMS / image-side sweet spot / hard-val / prediction diagnostics
-→ 只提交 local strict mAP 超过 0.426267708、线上基线超过 48.727 且预测分布合理的候选
+→ 只提交 local strict mAP 超过 0.437961585、线上基线超过 50.353 且 hard-val / 预测分布合理的候选
 → 再推进更长训练 / train-all / 单模型 TTA或tile / IR-Depth RGC fusion 迁移
 → 严格 promotion 后提交
 ```
@@ -147,7 +149,7 @@
 4. 输出 class-wise AP/count/score histogram、boxes/image、top100 截断报告。
 5. 构建 hard validation，防止阈值过拟合普通 fold。
 6. 只在 strict mAP、hard-val、预测分布都过门禁后提交。
-7. 已验证 positive：2026-06-22 fresh epoch7 class-threshold candidate strict `0.4262677082771047`，hard-val `0.28694971837472955`，线上 `48.727`，成为新 anchor。
+7. 已验证 positive：2026-06-22 fresh epoch7 class-threshold candidate strict `0.4262677082771047`，hard-val `0.28694971837472955`，线上 `48.727`，成为历史 anchor；2026-06-24/25 GPU1 load-from epoch6 + top100 allocation person085/light105 strict `0.4379402743447105`，hard-val `0.2954397153241342`，线上 `50.349`，成为历史 anchor；2026-06-25 person0865/light10625/uav0825/boat003 strict `0.4379615851682616`，hard-val `0.29545499238138817`，线上 `50.353`，成为当前新 anchor。
 8. 已验证 image-side 诊断：旧 eval_s768/s832/s896 输出完全一致的根因是 `(1333, side)` 被宽度 cap 主导，三者都实际 resize 到 `1333×750`；修正 s832 为 `(1479,832)` 后输出 hash 改变，但 strict `0.4227484953374498` 低于 anchor，不进入 test ZIP / promotion / 提交。
 9. 已验证 negative：2026-06-22 high-res fine-tune best strict `0.4188436556179077` 低于 fresh epoch7 raw/class-threshold anchor；不生成 test ZIP、不 promote、不提交。
 
@@ -174,7 +176,8 @@
 
 ## 📝 文档更新日志
 
-- 2026-06-22：记录 Co-DETR fresh epoch7 + class thresholds 为当前 48.727 anchor；raw fresh epoch7 为 48.6960；high-res fine-tune strict mAP 退步，未进入 promotion/提交。
+- 2026-06-25：记录 Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person085/light105 为当前 50.353 anchor；strict 0.437940274，hard-val 0.295439715。
+- 2026-06-22：记录 Co-DETR fresh epoch7 + class thresholds 为历史 48.727 anchor；raw fresh epoch7 为 48.6960；high-res fine-tune strict mAP 退步，未进入 promotion/提交。
 - 2026-06-18：主路线调整为 Co-DETR + InternImage-L；删除测试集伪标签训练、多模型简单融合等不合规/高风险默认路线。
 - 2026-06-15：重组文档结构，创建归档目录。
 - 2026-06-15：2-fold 融合失败（44.263）。
