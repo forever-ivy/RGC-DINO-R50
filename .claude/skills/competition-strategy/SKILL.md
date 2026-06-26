@@ -14,6 +14,7 @@ Read `CLAUDE.md` first and preserve these rules:
 
 - no external training data
 - no online API calls in the project pipeline
+- no test-set pseudo-label training
 - no simple voting/averaging ensemble
 - submit only complete test-set prediction ZIPs
 - do not expose or print sensitive auth/cookie files
@@ -21,27 +22,29 @@ Read `CLAUDE.md` first and preserve these rules:
 ## Read these files first
 
 - `CLAUDE.md`
+- `README.md`
+- `docs/README.md`
+- `docs/FINAL_ROADMAP.md`
 - `scripts/promote_submission_candidate.py`
 - `scripts/monitor_competition.py`
 - `scripts/check_leaderboard.py`
 - `scripts/submit_prediction.py`
 - `src/rgc_dino/submission_promotion.py`
 - `src/rgc_dino/submission_manifest.py`
-- `docs/README.md`
-- `docs/archive/lessons_learned/TTA_FAILURE_ANALYSIS.md`
-- `docs/archive/lessons_learned/2FOLD_FAILURE_LESSONS.md`
 
 ## Core strategic lessons already established in this repo
 
-- weak-model fusion can reduce score
-- validation and leaderboard are related but not identical
-- naïve TTA averaging can fail badly
-- simple averaging/voting ensemble is not an acceptable default path here
-- a strong single model is usually a higher-priority milestone than fancy fusion
+- Current mainline is Co-DETR + InternImage-L, not legacy RGC-DINO/DINO-R50.
+- Current anchor is 50.353 / strict final-TXT mAP `0.4379615851682616` / hard-val `0.29545499238138817`.
+- Weak-model/fold fusion can reduce score; do not assume more fusion helps.
+- Naive TTA score/box averaging failed badly; only validated NMS/WBF-like single-model merging is acceptable.
+- Low-threshold blind tuning increases false positives and can drop leaderboard score.
+- Validation and leaderboard are related but not identical; require hard-val and prediction distribution evidence.
+- A strong single model plus disciplined postprocess is the priority.
 
 ## Submission decision workflow
 
-### 1. Check whether the artifact is even eligible
+### 1. Check whether the artifact is eligible
 
 Reject or warn on artifacts that look like:
 
@@ -50,24 +53,27 @@ Reject or warn on artifacts that look like:
 - debug output
 - empty-submission checks
 - partial test predictions
+- stale candidates without promotion metadata
 
 ### 2. Require a reason
 
 A candidate should only move forward with a concrete reason such as:
 
-- better local validation
-- deliberate threshold/NMS change backed by evidence
-- strong new checkpoint
+- strict final-TXT mAP beats the current anchor
+- deliberate threshold/NMS/top100 allocation change backed by evidence
+- strong new checkpoint with hard-val and distribution checks
 - explicit user instruction
 
 ### 3. Check provenance
 
 Prefer candidates with traceable provenance:
 
-- checkpoint path
+- checkpoint path and hash
 - config path
-- local metric context
-- git commit / manifest / checksum where available
+- local strict final-TXT metric
+- hard-val metric when applicable
+- class thresholds / NMS / image side / top100 allocation settings
+- git commit / manifest / checksum
 
 ### 4. Respect timing discipline
 
@@ -85,14 +91,14 @@ Prefer candidates with traceable provenance:
 
 - If evidence is weak, recommend more local validation before submission.
 - If a direction has already failed locally and historically, state that clearly.
-- If the candidate is valid but not clearly better, frame it as optional rather than mandatory.
+- If a candidate is valid but not clearly better, frame it as optional rather than mandatory.
 - If the user asks for aggressive score chasing, keep advice within the repo’s competition constraints.
 
 ## Avoid
 
 - Do not recommend invalid ZIP types.
 - Do not recommend simple averaging ensembles.
-- Do not ignore the repo’s documented TTA/fusion failure lessons.
+- Do not ignore the repo’s documented low-threshold/TTA/fusion failure lessons summarized in `docs/README.md` and `docs/FINAL_ROADMAP.md`.
 - Do not use generic Kaggle advice that conflicts with this competition’s rules.
 
 ## Success criterion

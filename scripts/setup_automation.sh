@@ -32,7 +32,7 @@ elif command -v chromium-browser &> /dev/null; then
     echo "   ✓ Found chromium-browser: $(which chromium-browser)"
 else
     echo "   ⚠ Chrome/Chromium not found!"
-    echo "   Install with: sudo apt install chromium-browser chromium-chromedriver"
+    echo "   Ask the user to provide a browser/runtime under /data1/liuxuan/; do not use sudo or apt on this server."
 fi
 
 # Make scripts executable
@@ -68,5 +68,5 @@ echo ""
 echo "4. Start automated monitor:"
 echo "   python scripts/monitor_competition.py --cookies outputs/cookies.json --auto-submit"
 echo ""
-echo "See docs/COMPETITION_AUTOMATION.md for full documentation"
+echo "See CLAUDE.md and docs/README.md for current competition automation guidance"
 echo ""

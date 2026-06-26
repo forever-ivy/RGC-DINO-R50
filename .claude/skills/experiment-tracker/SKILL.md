@@ -14,21 +14,30 @@ Turn scattered logs, checkpoints, inference outputs, and local metrics into a co
 
 ## Read these files first
 
+- `CLAUDE.md`
+- `docs/README.md`
+- `docs/FINAL_ROADMAP.md`
+- `scripts/cache_codetr_predictions.py`
+- `scripts/sweep_codetr_class_thresholds.py`
+- `scripts/sweep_codetr_top100_allocation.py`
+- `scripts/sweep_codetr_submission_params.py`
+- `scripts/codetr_results_to_submission.py`
+- `scripts/promote_submission_candidate.py`
+
+For legacy RGC-DINO/DINO experiments, additionally read:
+
 - `scripts/select_best_checkpoint.py`
 - `scripts/sweep_inference_params.py`
 - `scripts/infer_rgc_dino.py`
 - `scripts/evaluate_predictions.py`
-- `scripts/validate_3fold_fusion.py`
-- `scripts/validate_tta_on_fold0.py`
-- `docs/README.md`
-- `docs/archive/lessons_learned/TTA_FAILURE_ANALYSIS.md`
-- `docs/archive/lessons_learned/2FOLD_FAILURE_LESSONS.md`
 
 ## Important repo evidence
 
-- Checkpoint ranking is a first-class workflow here.
-- Inference threshold / NMS sweeps are already supported.
-- This repo has documented failure cases where “more fusion” or naïve TTA reduced score.
+- Current mainline is Co-DETR + InternImage-L.
+- Current anchor is 50.353 / strict final-TXT mAP `0.4379615851682616` / hard-val `0.29545499238138817`.
+- Checkpoint ranking and strict final-TXT evaluation are first-class workflows.
+- Class-wise thresholds and legal top100 allocation are critical; native COCO eval alone is insufficient.
+- Historical failure lessons: low-threshold blind tuning, naive TTA averaging, and weak fold fusion reduced leaderboard score.
 - Local validation evidence should be summarized before any submission suggestion.
 
 ## Standard workflow
@@ -38,21 +47,24 @@ Turn scattered logs, checkpoints, inference outputs, and local metrics into a co
 Figure out what is being compared:
 
 - epochs within one run
-- folds
-- threshold/NMS settings
-- TTA variants
-- fusion variants
+- checkpoints within Co-DETR continuation
+- threshold/NMS/top100 allocation settings
+- image-side/resize settings
+- TTA/tile variants
+- fusion/RDT/future IR-depth variants
 - backbone/config variants
 
 ### 2. Collect the canonical evidence
 
 Prefer these sources:
 
-- training logs under `logs/` or run output dirs
-- checkpoint files and ranking outputs
-- inference sweep outputs such as ranking JSON
-- local evaluation metrics from `evaluate_predictions.py`
-- docs that record prior known failures
+- run output dirs under `outputs/codetr/`
+- strict final-TXT eval reports
+- hard-val reports
+- class threshold / allocation JSON files
+- submission manifests and promotion JSON sidecars
+- monitor/leaderboard history when comparing submitted candidates
+- local evaluation metrics from `evaluate_predictions.py` when working on legacy TXT predictions
 
 ### 3. Normalize the comparison
 
@@ -61,15 +73,16 @@ Always state:
 - dataset split or fold
 - checkpoint path(s)
 - inference settings
-- whether the metric is local validation or leaderboard
+- postprocess settings: thresholds, NMS, image side, max detections/top100 allocation
+- whether the metric is native COCO, strict final-TXT validation, hard-val, or leaderboard
 - whether comparison is apples-to-apples
 
 ### 4. Recommend the next action
 
 End with one of these:
 
-- keep current best checkpoint
-- sweep a narrower threshold/NMS range
+- keep current best checkpoint/recipe
+- sweep a narrower threshold/NMS/allocation range
 - stop pursuing a failed direction
 - promote a candidate for submission review
 - gather missing evidence before deciding
@@ -79,7 +92,7 @@ End with one of these:
 - Treat documented failure lessons as priors, not noise.
 - Do not assume TTA helps; check whether the implementation is actually supported in the path being used.
 - Do not assume multi-fold or multi-model fusion helps; weak components can drag a stronger model down.
-- Distinguish local validation from leaderboard behavior.
+- Distinguish local validation, hard-val, test prediction, OOF, and leaderboard behavior.
 - Prefer compact experiment summaries over vague “looks better” judgments.
 
 ## Suggested summary format
@@ -88,8 +101,8 @@ When useful, summarize experiments as:
 
 - experiment name / run directory
 - checkpoint(s)
-- local metric
-- inference settings
+- strict local metric / hard-val / leaderboard if available
+- inference and postprocess settings
 - notable differences
 - decision: keep / reject / sweep / submit-review
 
@@ -98,7 +111,3 @@ When useful, summarize experiments as:
 - Do not recommend submission purely from intuition.
 - Do not blur validation, test, OOF, and leaderboard evidence.
 - Do not present incomparable runs as a ranked list without caveats.
-
-## Success criterion
-
-The result should leave the user with a clean, evidence-backed answer to “what is best now?” and “what is the most justified next experiment?”

@@ -1,7 +1,7 @@
 # 2×RTX 3090 可行性路线：Co-DETR + InternImage-L 主线
 
-> 更新日期：2026-06-20
-> 本文是 `docs/FINAL_ROADMAP.md` 的硬件可行性版，专门回答：在 **2×RTX 3090（24GB×2）** 上，如何坚持已线上验证的 **Co-DETR + InternImage-L continuation** 主线冲击更高分。当前 best：epoch20，strict mAP 0.413322，leaderboard 48.335。
+> 更新日期：2026-06-26
+> 本文是 `docs/FINAL_ROADMAP.md` 的硬件可行性版，专门回答：在 **2×RTX 3090（24GB×2）** 上，如何坚持已线上验证的 **Co-DETR + InternImage-L continuation/checkpoint-selection + legal top100 allocation** 主线冲击更高分。当前 best：GPU1 load-from epoch6 + person0865/light10625/uav0825/boat003，strict mAP `0.4379615851682616`，hard-val `0.29545499238138817`，leaderboard `50.353`。
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Co-DETR + InternImage-L continuation 已经是当前线上最高分主线。**
 
-它不是轻量路线，但已在 2×3090 上跑通并把线上分从 RGC-DINO baseline 45.044 提升到 48.335。对手 `urban-visual-recognition` 公开记录 50.8190，说明在继续长训之前，应先补齐 class-wise threshold、NMS/image-side sweet spot、hard validation 和 prediction diagnostics。后续继续沿 Co-DETR InternImage-L 做 checkpoint selection、后处理升级、长训、train-all、高分辨率/单模型后处理，以及再迁移 IR/Depth RGC fusion。
+它不是轻量路线，但已在 2×3090 上跑通并把线上分从 RGC-DINO baseline 45.044 提升到当前 50.353。对手 `urban-visual-recognition` 公开记录 50.8190，说明在继续长训之前，应继续围绕当前 winner 做 class-wise threshold、legal top100 allocation、NMS/image-side sweet spot、hard validation 和 prediction diagnostics。后续继续沿 Co-DETR InternImage-L 做 checkpoint selection、后处理升级、长训、train-all、高分辨率/单模型后处理，以及再迁移 IR/Depth RGC fusion。
 
 在 2×3090 上的判断：
 
@@ -24,9 +24,9 @@
 所以最终策略是：
 
 ```text
-保留当前 Co-DETR + InternImage-L continue epoch20 best checkpoint
-→ 后续 continuation/longer train 必须 strict mAP > 0.413322 才提交
-→ 立即插入 class-wise threshold / NMS-image-side sweet spot / hard-val / prediction diagnostics
+保留当前 Co-DETR + InternImage-L GPU1 ep6 + person0865/light10625/uav0825/boat003 anchor
+→ 后续 continuation/longer train 必须 strict mAP > 0.4379615851682616 且 hard-val 不崩才提交
+→ 继续 class-wise threshold / legal top100 allocation / NMS-image-side sweet spot / hard-val / prediction diagnostics
 → 再做 train-all + 单模型 TTA/切图/后处理
 → 最后在 Co-DETR InternImage-L 主线上迁移 IR/Depth RGC fusion
 ```
@@ -192,7 +192,7 @@ augmentation:
 
 ## Stage 2.5：后处理与验证升级（对手经验吸收）
 
-目标：在继续重 GPU 训练前，用现有 epoch20 best / epoch24 checkpoint 榨干后处理潜力，验证 48.335 是否主要受阈值、NMS、分辨率和 FP 控制限制。
+目标：在继续重 GPU 训练前，用当前 GPU1 ep6 anchor 榨干后处理潜力，验证 50.353 是否还能通过阈值、top100 allocation、NMS、分辨率和 FP 控制继续提升；epoch20/epoch24 只保留为历史对照。
 
 该阶段 GPU 成本主要是推理，不是长训；适合在 2×3090 上并行于训练监控进行。
 
@@ -217,7 +217,7 @@ validation:
 
 通过标准：
 
-- strict final-TXT mAP 超过 0.413322。
+- strict final-TXT mAP 超过 0.4379615851682616。
 - hard-val 不明显退化。
 - 每类预测数量和每图框数没有异常膨胀。
 - class thresholds、NMS、image side、候选框数量写入 manifest/promotion metadata。

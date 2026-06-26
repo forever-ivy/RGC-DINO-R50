@@ -442,7 +442,7 @@ finetune:
 | Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person085/light105 | 历史 anchor：strict mAP 0.437940274，hard-val 0.295439715，线上 50.349；已被 person0865/light10625/uav0825/boat003 超过 |
 | Co-DETR InternImage-L GPU1 load-from epoch6 + top100 allocation person0865/light10625/uav0825/boat003 | 当前 anchor：strict mAP 0.437961585，hard-val 0.295454992，线上 50.353 |
 | 后续 continuation / longer train | 必须 strict final-TXT mAP > 0.437940274 且 hard-val 不崩才允许提交 |
-| class-wise threshold / NMS / high-res postprocess | 优先基于当前 GPU1 ep6 person085/light105 anchor 执行；必须 strict final-TXT mAP > 0.437940274，prediction distribution 合理，hard-val 不崩；旧 eval_s768/s832/s896 因 `(1333, side)` 被 width cap 成同一 `1333×750` 输出，修正 s832 smoke strict 0.422748 仍低于当前 anchor |
+| class-wise threshold / NMS / high-res postprocess | 优先基于当前 GPU1 ep6 person0865/light10625/uav0825/boat003 anchor 执行；必须 strict final-TXT mAP > 0.4379615851682616，prediction distribution 合理，hard-val 不崩；旧 eval_s768/s832/s896 因 `(1333, side)` 被 width cap 成同一 `1333×750` 输出，修正 s832 smoke strict 0.422748 仍低于当前 anchor |
 | train-all / high-res / TTA / tile | 必须以线上 50.353 为 baseline，先 validation + hard-val 证明再提交；2026-06-22 high-res fine-tune strict 0.418843656 已淘汰 |
 | IR/Depth RGC fusion 迁移 | 必须在 Co-DETR InternImage-L 主线上验证，不能回退旧 RGC-DINO 体系盲训 |
 
